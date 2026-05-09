@@ -1,6 +1,6 @@
 # DailyStock
 
-每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股**成交额前 100 名 ∪ 同花顺热榜前 100 名**（去重、排除 688 与 ST），跑常用策略筛选（含**一票否决**），调用 DeepSeek 判定是否可买入，按钉钉机器人格式推送“汇总 + 重点”消息，并将结果落地到 SQLite/CSV。
+每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股**成交额前 100 名 ∪ 同花顺热榜前 100 名**（去重、排除 688 与 ST），跑常用策略筛选（含**一票否决**），调用 DeepSeek 判定后选出 **AI 评分前 5 ∪ 重点票** 生成 HTML 报告（按月分目录），钉钉只推一条带 URL 的文本消息。HTML 中会含上次推送股票的跌幅回看。
 
 ## 功能模块
 - 数据获取：AKShare（`stock_zh_a_spot_em` 实时全市场 + `stock_zh_a_hist` 日线）
@@ -56,15 +56,15 @@ crontab -e
 # 若不是 Asia/Shanghai：sudo timedatectl set-timezone Asia/Shanghai
 ```
 
-## 钉钉消息格式（已实现）
+## 铉钉消息格式（底层支持）
 基于官方文档 https://open.dingtalk.com/document/development/robot-message-type
 
 | 用途 | msgtype | 关键字段 |
 | --- | --- | --- |
-| 每日汇总 | `markdown` | `markdown.title`, `markdown.text` |
-| 重点单发 | `actionCard` | `actionCard.title`, `actionCard.text`, `singleTitle`, `singleURL` |
-| 失败回退 | `text` | `text.content` |
-| 多链接（备） | `feedCard` | `feedCard.links[]` |
+| 实际推送 | `text` | `text.content`（内容为报告 URL） |
+| 可选 | `markdown` | `markdown.title`, `markdown.text` |
+| 可选 | `actionCard` | `actionCard.title`, `actionCard.text`, `singleTitle`, `singleURL` |
+| 可选 | `feedCard` | `feedCard.links[]` |
 
 均支持 `at.atMobiles` / `at.isAtAll`；机器人开启加签时通过 `DINGTALK_SECRET` 自动加签。
 
@@ -100,20 +100,48 @@ crontab -e
 
 所有阈值可在 `.env` 内调整；候选池逻辑为：**硬过滤 → 一票否决 → 信号≥2**，候选池逐只调用 DeepSeek。
 
+## 决策与推送
+- 候选池 = 硬过滤通过 且 未被否决 且 信号命中数 ≥ `MIN_SIGNALS`（默认 2）
+- 重点 = AI `allow=true` 且 `score ≥ FOCUS_SCORE`（默认 80）
+- **推送名单 = AI 评分前 `PUSH_TOP_N`（默认 5）∪ 重点票**，去重后按评分降序
+- 同一 (run_date, run_slot) 已发送成功的消息会自动去重
+
+## HTML 报告
+文件路径：`reports/{YYYY-MM}/{MM-DD}-{noon|afternoon}.html`
+- 中午场 `--slot midday` → `MM-DD-noon.html`
+- 收盘场 `--slot close` → `MM-DD-afternoon.html`
+
+外链 URL：`{REPORT_HOST}/{YYYY-MM}/{MM-DD}-{noon|afternoon}.html`。需提前用 Nginx/HTTP 服务器将 `REPORTS_DIR` 映射到 `REPORT_HOST`。例：
+```nginx
+location /reports/ {
+  alias /home/yyf/DailyStock/reports/;
+  autoindex on;
+}
+```
+
+HTML 包含：
+- 运行统计：样本量 / 一票否决数 / 候选池 / AI 调用-允许 / 推送数
+- 本次推送表：代码名称、来源、价格、AI 评分与判定、命中信号、AI 理由 + 可展开的策略明细
+- 上次推送回看表：推送时价 vs 当前价、区间涨跌幅、胜率、平均涨跌幅
+
+## 钉钉推送
+只发送一条 `text` 消息，内容包含报告标题与 URL，例：
+```
+DailyStock 选股报告 - 2026-05-09 下午 16:00
+推送 5 只 (重点 1 / TopAI 5)
+http://your.host/reports/2026-05/05-09-afternoon.html
+```
+
+## 钉钉发送能力（底层保留）
+[`DingTalkClient`](src/notify/dingtalk.py) 仍提供 `text / markdown / actionCard / link / feedCard`及加签能力，需要时可复用。
+
 ## DeepSeek 输入内容
 对每只候选股，提示词会包含：
 - 基本信息：代码、名称、**来源**(turnover/ths_hot)、最新价、涨跌幅、成交量/额、振幅、开/高/低/收
 - 技术指标：MA5/10/20/60、**BIAS10/20**、**20日累计涨幅**、MACD(DIF/DEA/HIST)、RSI14、近 20 日高/低、**52周高点**、量比
 - 策略命中：命中信号列表、未命中列表、明细
 
-返回统一为 JSON `{score, allow, reason}`，`allow=true 且 score ≥ FOCUS_SCORE` 认为重点。
-
-## 决策与推送
-- 候选池 = 通过硬过滤 且信号命中数 ≥ `MIN_SIGNALS`
-- 重点 = AI `allow=true` 且 `score ≥ FOCUS_SCORE`（默认 80）
-- 重点单发上限 `TOP_K_FOCUS`（默认 10）
-- 同一 (run_date, run_slot, code) 已发送成功的消息会自动去重
-- 即使候选为空也会发送“空结果汇总”避免静默失败
+返回统一为 JSON `{score, allow, reason}`。
 
 ## 排障
 - 行情为空：交易时段外或 AKShare 限流，可稍后重跑或检查网络

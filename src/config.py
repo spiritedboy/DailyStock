@@ -101,6 +101,11 @@ class Settings:
     focus_score: int = 80
     top_k_focus: int = 10
     ai_max_candidates: int = 20
+    push_top_n: int = 5  # 推送 AI 评分前 N 名（与重点票合并去重）
+
+    # 报告 / HTML
+    report_host: str = ""  # 例如 http://example.com/reports
+    reports_dir: Path = Path("./reports")
 
     # 存储
     data_dir: Path = Path("./data")
@@ -116,6 +121,8 @@ class Settings:
             errors.append("DEEPSEEK_API_KEY 未配置")
         if not self.dingtalk_webhook:
             errors.append("DINGTALK_WEBHOOK 未配置")
+        if not self.report_host:
+            errors.append("REPORT_HOST 未配置（HTML 报告外链域名）")
         return errors
 
 
@@ -163,6 +170,9 @@ def load_settings() -> Settings:
         focus_score=_get_int("FOCUS_SCORE", 80),
         top_k_focus=_get_int("TOP_K_FOCUS", 10),
         ai_max_candidates=_get_int("AI_MAX_CANDIDATES", 20),
+        push_top_n=_get_int("PUSH_TOP_N", 5),
+        report_host=_get("REPORT_HOST", "").rstrip("/"),
+        reports_dir=Path(_get("REPORTS_DIR", "./reports")),
         data_dir=Path(_get("DATA_DIR", "./data")),
         sqlite_path=Path(_get("SQLITE_PATH", "./data/dailystock.db")),
         log_level=_get("LOG_LEVEL", "INFO"),
@@ -171,4 +181,5 @@ def load_settings() -> Settings:
     s.data_dir.mkdir(parents=True, exist_ok=True)
     s.log_dir.mkdir(parents=True, exist_ok=True)
     s.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+    s.reports_dir.mkdir(parents=True, exist_ok=True)
     return s

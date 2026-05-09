@@ -77,12 +77,10 @@ class StockEvaluation:
     indicators: IndicatorBundle = field(default_factory=IndicatorBundle)
     strategy: StrategyResult = field(default_factory=StrategyResult)
     ai: Optional[AiDecision] = None
+    is_focus: bool = False
+    is_pushed: bool = False  # 本次是否被纳入推送列表
 
     @property
     def is_candidate(self) -> bool:
         st = self.strategy
         return st.risk_passed and not st.vetoed and st.hits >= 2
-
-    @property
-    def is_focus(self) -> bool:
-        return bool(self.ai and self.ai.ok and self.ai.allow)

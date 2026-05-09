@@ -42,7 +42,7 @@ SCHEMA = [
         risk_passed INTEGER, vetoed INTEGER, veto_reasons TEXT,
         hits INTEGER, signals TEXT, misses TEXT,
         ai_ok INTEGER, ai_score INTEGER, ai_allow INTEGER, ai_reason TEXT,
-        is_candidate INTEGER, is_focus INTEGER,
+        is_candidate INTEGER, is_focus INTEGER, is_pushed INTEGER,
         created_at TEXT NOT NULL,
         UNIQUE(run_date, run_slot, code)
     )
@@ -124,6 +124,7 @@ class Repository:
                 ai.reason if ai else "",
                 1 if e.is_candidate else 0,
                 1 if e.is_focus else 0,
+                1 if e.is_pushed else 0,
                 now,
             ))
         with self._conn() as c:
@@ -137,8 +138,8 @@ class Repository:
                  risk_passed, vetoed, veto_reasons,
                  hits, signals, misses,
                  ai_ok, ai_score, ai_allow, ai_reason,
-                 is_candidate, is_focus, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 is_candidate, is_focus, is_pushed, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 rows,
             )
@@ -150,6 +151,51 @@ class Repository:
                 (run_date, run_slot, kind, target),
             )
             return cur.fetchone() is not None
+
+    def get_previous_pushed(
+        self, current_run_date: str, current_run_slot: str,
+    ):
+        """返回上一次推送的 (run_date, run_slot, picks_list)。无则返回 ("", "", [])。
+
+        slot 顺序：midday < close。
+        """
+        cur_ord = 1 if current_run_slot == "close" else 0
+        with self._conn() as c:
+            row = c.execute(
+                """
+                SELECT run_date, run_slot FROM picks
+                WHERE is_pushed=1 AND (
+                    run_date < ?
+                    OR (run_date = ? AND CASE run_slot WHEN 'close' THEN 1 ELSE 0 END < ?)
+                )
+                ORDER BY run_date DESC,
+                         CASE run_slot WHEN 'close' THEN 1 ELSE 0 END DESC
+                LIMIT 1
+                """,
+                (current_run_date, current_run_date, cur_ord),
+            ).fetchone()
+            if not row:
+                return "", "", []
+            prev_date, prev_slot = row[0], row[1]
+            rows = c.execute(
+                """
+                SELECT code, name, price, pct_change, ai_score, ai_reason, hits, signals,
+                       sources, is_focus
+                FROM picks
+                WHERE run_date=? AND run_slot=? AND is_pushed=1
+                ORDER BY ai_score DESC, hits DESC
+                """,
+                (prev_date, prev_slot),
+            ).fetchall()
+            picks = [
+                {
+                    "code": r[0], "name": r[1], "price": r[2], "pct_change": r[3],
+                    "ai_score": r[4], "ai_reason": r[5], "hits": r[6],
+                    "signals": r[7], "sources": r[8], "is_focus": bool(r[9]),
+                }
+                for r in rows
+            ]
+            return prev_date, prev_slot, picks
 
     def save_notification(
         self, run_id: str, run_date: str, run_slot: str,
@@ -179,7 +225,7 @@ class Repository:
                 "risk_passed", "vetoed", "veto_reasons",
                 "hits", "signals", "misses",
                 "ai_ok", "ai_score", "ai_allow", "ai_reason",
-                "is_candidate", "is_focus",
+                "is_candidate", "is_focus", "is_pushed",
             ])
             for e in evals:
                 s, ind, st, ai = e.snapshot, e.indicators, e.strategy, e.ai
@@ -196,6 +242,6 @@ class Repository:
                     ai.score if ai else 0,
                     int(bool(ai and ai.allow)),
                     ai.reason if ai else "",
-                    int(e.is_candidate), int(e.is_focus),
+                    int(e.is_candidate), int(e.is_focus), int(e.is_pushed),
                 ])
         return path
