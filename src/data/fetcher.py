@@ -43,11 +43,24 @@ def _is_excluded(code: str, name: str, exclude_prefixes: List[str], exclude_name
 
 
 def _load_spot() -> pd.DataFrame:
-    """拉一次全市场实时行情并标准化列。"""
+    """拉一次全市场实时行情并标准化列。带重试。"""
     import akshare as ak
 
-    df: pd.DataFrame = ak.stock_zh_a_spot_em()
+    df: Optional[pd.DataFrame] = None
+    last_err: Optional[Exception] = None
+    for i in range(4):
+        try:
+            df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                break
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            wait = min(2 ** i, 10)
+            logger.warning("拉取实时行情失败(第%d次)，%ss 后重试: %s", i + 1, wait, e)
+            time.sleep(wait)
     if df is None or df.empty:
+        if last_err is not None:
+            raise last_err
         return pd.DataFrame()
     cols = {k: v for k, v in _SPOT_RENAME.items() if k in df.columns}
     df = df.rename(columns=cols)
