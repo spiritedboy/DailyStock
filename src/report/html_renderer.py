@@ -52,32 +52,56 @@ def _esc(v) -> str:
 
 
 _CSS = """
-:root { color-scheme: light dark; }
+:root { color-scheme: light dark; --bg:#fff; --fg:#222; --muted:#666; --line:#e0e0e0;
+  --row-alt:#fafbfc; --th:#f5f7fa; --link:#1a73e8; --pos:#d93025; --neg:#188038;
+  --tag-tov-bg:#e8f0fe; --tag-tov-fg:#1a73e8;
+  --tag-hot-bg:#fce8e6; --tag-hot-fg:#d93025;
+  --tag-focus-bg:#fef7e0; --tag-focus-fg:#b06000;
+  --tag-allow-bg:#e6f4ea; --tag-allow-fg:#137333;
+  --tag-deny-bg:#fce8e6; --tag-deny-fg:#c5221f;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#1a1b1e; --fg:#e3e3e3; --muted:#9aa0a6; --line:#2c2d30;
+    --row-alt:#202125; --th:#26272b; --link:#8ab4f8; --pos:#ff6b6b; --neg:#52d18a;
+    --tag-tov-bg:#1f2a40; --tag-tov-fg:#8ab4f8;
+    --tag-hot-bg:#3b1d1c; --tag-hot-fg:#ff6b6b;
+    --tag-focus-bg:#3a2e10; --tag-focus-fg:#ffd278;
+    --tag-allow-bg:#1a3322; --tag-allow-fg:#52d18a;
+    --tag-deny-bg:#3a1d1d; --tag-deny-fg:#ff8a80;
+  }
+}
 * { box-sizing: border-box; }
 body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  margin: 24px auto; max-width: 1080px; padding: 0 16px; line-height: 1.55; color: #222; }
+  margin: 24px auto; max-width: 1180px; padding: 0 16px; line-height: 1.55;
+  background: var(--bg); color: var(--fg); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
 h1 { font-size: 22px; margin: 0 0 4px; }
-h2 { font-size: 18px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
-.meta { color: #666; font-size: 13px; margin-bottom: 12px; }
+h2 { font-size: 18px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 15px; margin: 16px 0 8px; }
+.meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
 .stat { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0 16px; font-size: 13px; }
-.stat span b { color: #1a73e8; }
+.stat span b { color: var(--link); }
 table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px; }
-th, td { border: 1px solid #e0e0e0; padding: 6px 8px; text-align: left; vertical-align: top; }
-th { background: #f5f7fa; font-weight: 600; }
-tr:nth-child(even) td { background: #fafbfc; }
-.pos { color: #d93025; font-weight: 600; }
-.neg { color: #188038; font-weight: 600; }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: var(--th); font-weight: 600; }
+tr:nth-child(even) td { background: var(--row-alt); }
+.pos { color: var(--pos); font-weight: 600; }
+.neg { color: var(--neg); font-weight: 600; }
 .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px; }
-.tag-tov { background: #e8f0fe; color: #1a73e8; }
-.tag-hot { background: #fce8e6; color: #d93025; }
-.tag-focus { background: #fef7e0; color: #b06000; }
-.tag-allow { background: #e6f4ea; color: #137333; }
-.tag-deny { background: #fce8e6; color: #c5221f; }
+.tag-tov { background: var(--tag-tov-bg); color: var(--tag-tov-fg); }
+.tag-hot { background: var(--tag-hot-bg); color: var(--tag-hot-fg); }
+.tag-focus { background: var(--tag-focus-bg); color: var(--tag-focus-fg); }
+.tag-allow { background: var(--tag-allow-bg); color: var(--tag-allow-fg); }
+.tag-deny { background: var(--tag-deny-bg); color: var(--tag-deny-fg); }
 details { margin: 4px 0; }
-summary { cursor: pointer; color: #1a73e8; font-size: 12px; }
-.reason { color: #444; font-size: 12px; white-space: pre-wrap; }
-.empty { color: #888; font-style: italic; }
-footer { color: #888; font-size: 12px; margin-top: 24px; border-top: 1px solid #eee; padding-top: 8px; }
+summary { cursor: pointer; color: var(--link); font-size: 12px; }
+.reason { color: var(--fg); font-size: 12px; white-space: pre-wrap; }
+.reason.muted { color: var(--muted); }
+.empty { color: var(--muted); font-style: italic; }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; border-top: 1px solid var(--line); padding-top: 8px; }
+.kline-cell { width: 220px; height: 100px; }
+@media (max-width: 720px) { .kline-cell { width: 160px; height: 80px; } }
 """
 
 
@@ -228,6 +252,104 @@ def _render_prev_table(
 """
 
 
+def _render_overall_stats(overall: dict | None) -> str:
+    if not overall or not overall.get("n"):
+        return ""
+    return (
+        f'<h2>历史推送表现（近 {overall.get("days", 30)} 天，T+{overall.get("period", 5)}）</h2>'
+        f'<p class="stat">'
+        f'<span>样本: <b>{overall.get("n", 0)}</b></span>'
+        f'<span>平均收益: <b>{overall.get("avg", 0):+.2f}%</b></span>'
+        f'<span>胜率: <b>{overall.get("win", 0):.1f}%</b></span>'
+        f'<span>最高: <b>{overall.get("max", 0):+.2f}%</b></span>'
+        f'<span>最低: <b>{overall.get("min", 0):+.2f}%</b></span>'
+        f'</p>'
+    )
+
+
+def _render_signal_breakdown(rows: list) -> str:
+    if not rows:
+        return ""
+    body = "".join(
+        f"<tr><td>{_esc(r['signal'])}</td><td>{r['n']}</td>"
+        f"<td>{r['avg']:+.2f}%</td><td>{r['win']:.1f}%</td></tr>"
+        for r in rows
+    )
+    return (
+        '<h2>策略归因（按信号 5 日表现）</h2>'
+        '<table><thead><tr><th>信号</th><th>样本</th><th>平均收益</th><th>胜率</th></tr></thead>'
+        f'<tbody>{body}</tbody></table>'
+    )
+
+
+def _render_ai_calibration(rows: list) -> str:
+    if not rows:
+        return ""
+    body = "".join(
+        f"<tr><td>{_esc(r['bucket'])}</td><td>{r['n']}</td>"
+        f"<td>{r['avg']:+.2f}%</td><td>{r['win']:.1f}%</td></tr>"
+        for r in rows
+    )
+    return (
+        '<h2>AI 评分校准（5 日表现按分箱）</h2>'
+        '<table><thead><tr><th>分箱</th><th>样本</th><th>平均收益</th><th>胜率</th></tr></thead>'
+        f'<tbody>{body}</tbody></table>'
+    )
+
+
+def _render_kline_section(pushed: List[StockEvaluation], klines_map: dict) -> str:
+    """嵌入 ECharts 蜡烛小图：每只推送票一张。"""
+    if not pushed or not klines_map:
+        return ""
+    items = []
+    series_js = []
+    for e in pushed:
+        s = e.snapshot
+        df = klines_map.get(s.code)
+        if df is None or df.empty:
+            continue
+        df2 = df.tail(60)
+        try:
+            data = []
+            dates = []
+            for _, row in df2.iterrows():
+                dates.append(str(row.get("date", "")))
+                data.append([
+                    float(row["open"]), float(row["close"]),
+                    float(row["low"]), float(row["high"]),
+                ])
+        except Exception:  # noqa: BLE001
+            continue
+        chart_id = f"k_{s.code}"
+        items.append(
+            f'<tr><td>{_esc(s.code)} {_esc(s.name)}</td>'
+            f'<td><div id="{chart_id}" class="kline-cell"></div></td></tr>'
+        )
+        import json as _json
+        series_js.append(
+            f"renderK('{chart_id}', {_json.dumps(dates)}, {_json.dumps(data)});"
+        )
+    if not items:
+        return ""
+    return (
+        '<h2>推送票 60 日 K 线</h2>'
+        f'<table><tbody>{"".join(items)}</tbody></table>'
+        '<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>'
+        '<script>'
+        'function renderK(id, dates, data){'
+        ' var c=echarts.init(document.getElementById(id));'
+        ' c.setOption({grid:{left:30,right:8,top:8,bottom:18},'
+        '  xAxis:{type:"category",data:dates,axisLabel:{fontSize:9},axisTick:{show:false}},'
+        '  yAxis:{scale:true,axisLabel:{fontSize:9}},'
+        '  series:[{type:"candlestick",data:data,'
+        '    itemStyle:{color:"#d93025",color0:"#188038",borderColor:"#d93025",borderColor0:"#188038"}}]'
+        ' });'
+        '}'
+        + "".join(series_js) +
+        '</script>'
+    )
+
+
 def render_html(
     run_date: str,
     slot: str,
@@ -237,6 +359,10 @@ def render_html(
     prev_slot: str,
     prev_picks: List[dict],
     spot_now: dict,
+    overall: dict | None = None,
+    signal_rows: list | None = None,
+    ai_rows: list | None = None,
+    klines_map: dict | None = None,
 ) -> str:
     title = f"DailyStock 报告 - {run_date} {SLOT_DISPLAY.get(slot, slot)}"
     gen_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -250,6 +376,10 @@ def render_html(
         f"<span>AI 允许: <b>{stats.get('ai_allowed', 0)}</b></span>"
         f"<span>本次推送: <b>{len(pushed)}</b></span>"
     )
+    overall_html = _render_overall_stats(overall)
+    signal_html = _render_signal_breakdown(signal_rows or [])
+    ai_html = _render_ai_calibration(ai_rows or [])
+    kline_html = _render_kline_section(pushed, klines_map or {})
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -260,14 +390,20 @@ def render_html(
 </head>
 <body>
   <h1>{_esc(title)}</h1>
-  <div class="meta">生成时间 {gen_at}</div>
+  <div class="meta">生成时间 {gen_at} · <a href="../index.html">月度索引</a> · <a href="../../index.html">全部报告</a></div>
   <div class="stat">{stat_line}</div>
 
   <h2>本次推送（AI 评分前 {stats.get('push_top_n', 5)} ∪ 重点票）</h2>
   {pushed_html}
 
+  {kline_html}
+
   <h2>上次推送回看</h2>
   {prev_html}
+
+  {overall_html}
+  {signal_html}
+  {ai_html}
 
   <footer>
     数据来源：东方财富 / 同花顺；AI 判定：DeepSeek。仅供研究，不构成投资建议。
@@ -288,11 +424,78 @@ def write_report(
     prev_slot: str,
     prev_picks: List[dict],
     spot_now: dict,
+    overall: dict | None = None,
+    signal_rows: list | None = None,
+    ai_rows: list | None = None,
+    klines_map: dict | None = None,
 ) -> Tuple[Path, str]:
     local, url = report_paths(reports_dir, report_host, run_date, slot)
     local.parent.mkdir(parents=True, exist_ok=True)
     html_text = render_html(
-        run_date, slot, pushed, stats, prev_date, prev_slot, prev_picks, spot_now
+        run_date, slot, pushed, stats, prev_date, prev_slot, prev_picks, spot_now,
+        overall=overall, signal_rows=signal_rows, ai_rows=ai_rows, klines_map=klines_map,
     )
     local.write_text(html_text, encoding="utf-8")
     return local, url
+
+
+def write_index(reports_dir: Path, runs: list) -> Path:
+    """写出 reports/index.html（全部）+ reports/{YYYY-MM}/index.html（每月）。"""
+    reports_dir = Path(reports_dir)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    # 按月分组
+    by_month: dict = {}
+    for r in runs:
+        d = r["run_date"]
+        try:
+            ym = datetime.strptime(d, "%Y-%m-%d").strftime("%Y-%m")
+        except ValueError:
+            continue
+        by_month.setdefault(ym, []).append(r)
+
+    # 月度索引
+    for ym, items in by_month.items():
+        items.sort(key=lambda r: (r["run_date"], 0 if r["run_slot"] == "midday" else 1), reverse=True)
+        rows = []
+        for r in items:
+            slot = r["run_slot"]
+            try:
+                dt = datetime.strptime(r["run_date"], "%Y-%m-%d")
+            except ValueError:
+                continue
+            fname = f"{dt.strftime('%m-%d')}-{_slot_to_filename(slot)}.html"
+            rows.append(
+                f'<tr><td><a href="{fname}">{_esc(r["run_date"])} {SLOT_DISPLAY.get(slot, slot)}</a></td>'
+                f'<td>{r.get("total") or 0}</td><td>{r.get("candidates") or 0}</td>'
+                f'<td>{r.get("focus_count") or 0}</td><td>{r.get("vetoed") or 0}</td></tr>'
+            )
+        page = (
+            '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+            f'<title>DailyStock {ym}</title><style>{_CSS}</style></head><body>'
+            f'<h1>DailyStock 报告 - {ym}</h1>'
+            '<div class="meta"><a href="../index.html">← 返回总索引</a></div>'
+            '<table><thead><tr><th>报告</th><th>候选池</th><th>候选</th><th>重点</th><th>否决</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></body></html>'
+        )
+        (reports_dir / ym).mkdir(parents=True, exist_ok=True)
+        (reports_dir / ym / "index.html").write_text(page, encoding="utf-8")
+
+    # 总索引
+    months = sorted(by_month.keys(), reverse=True)
+    rows = []
+    for ym in months:
+        rows.append(
+            f'<tr><td><a href="{ym}/index.html">{ym}</a></td>'
+            f'<td>{len(by_month[ym])} 份</td></tr>'
+        )
+    total_page = (
+        '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+        f'<title>DailyStock 报告</title><style>{_CSS}</style></head><body>'
+        '<h1>DailyStock 报告索引</h1>'
+        '<table><thead><tr><th>月份</th><th>报告数</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></body></html>'
+    )
+    out = reports_dir / "index.html"
+    out.write_text(total_page, encoding="utf-8")
+    return out

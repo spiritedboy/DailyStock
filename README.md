@@ -1,33 +1,49 @@
 # DailyStock
 
-每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股**成交额前 100 名 ∪ 同花顺热榜前 100 名**（去重、排除 688 与 ST），跑常用策略筛选（含**一票否决**），调用 DeepSeek 判定后选出 **AI 评分前 5 ∪ 重点票** 生成 HTML 报告（按月分目录），钉钉只推一条带 URL 的文本消息。HTML 中会含上次推送股票的跌幅回看。
+每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股**成交额前 100 名 ∪ 同花顺热榜前 100 名**，跑常用策略筛选（含**一票否决**），调用 DeepSeek 判定后选出 **AI 评分前 5 ∪ 重点票** 生成 HTML 报告（按月分目录），钉钉只推一条带 URL 的文本消息。HTML 中含上次推送股票的回看、历史表现、策略归因、AI 校准与 60 日 K 线小图。
 
 ## 功能模块
-- 数据获取：AKShare（`stock_zh_a_spot_em` 实时全市场 + `stock_zh_a_hist` 日线）
-- 策略筛选：5 个默认策略（趋势/量能/涨跌幅/流动性/风险）可单独启停
-- AI 判定：DeepSeek Chat，输出严格 JSON `{score, allow, reason}`
-- 消息推送：钉钉自定义机器人 Webhook，markdown（汇总）+ actionCard（重点单发），text 回退
-- 持久化：SQLite（`runs`/`picks`/`notifications`）+ 每日 CSV 快照
-- 调度：Linux Cron / systemd timer，支持 `--slot midday|close`
+- **数据获取**：AKShare（实时全市场 + 日线 + 行业板块成分），日线本地 CSV 缓存 + 多线程拉取
+- **大盘环境**：上证指数 vs MA20，弱势时仅推送 AI 高分票
+- **策略筛选**：5+ 信号策略 + 2 个一票否决，可单独启停
+- **AI 判定**：DeepSeek Chat，每日缓存（`ai_cache` 表）+ 调用预算（`AI_DAILY_BUDGET`）
+- **推送过滤**：剔除一字板（涨停且开=高=低=收，无法买入）；同一行业最多 N 只
+- **HTML 报告**：按月分目录、ECharts 小 K 线、暗黑模式、`reports/index.html` 总索引
+- **跟踪表现**：`pick_returns` 表记录推送票 T+1/3/5/10/20 收益；报告内嵌策略归因 & AI 评分校准
+- **通知**：钉钉只发 URL 文本；钉钉异常自动邮件兜底（SMTP）
+- **可观测**：`logs/metrics.jsonl` 结构化日志（每次运行一行）
+- **CLI**：`run` / `dryrun` / `track` / `rebuild-index` 子命令
+- **CI**：GitHub Actions（`compileall` + `pytest`）
 
 ## 目录
 ```
 src/
-  config.py          # .env 配置加载与校验
-  logging_setup.py   # 日志（控制台 + 滚动文件）
-  models.py          # StockSnapshot/StrategyResult/AiDecision/StockEvaluation
-  data/fetcher.py    # 行情与日线
+  config.py              # .env 配置加载与校验
+  logging_setup.py       # 日志（控制台 + 滚动文件）
+  metrics.py             # 结构化指标 JSONL 输出
+  models.py              # 数据模型
+  data/
+    fetcher.py           # 行情/日线（含并发 + 重试）
+    cache.py             # K 线本地 CSV 缓存
+    industry.py          # 行业映射（东方财富板块成分，7 天缓存）
+    market.py            # 大盘环境评估（上证 vs MA20）
   strategy/
-    indicators.py    # MA / 均量
-    rules.py         # 5 个默认策略
-    pipeline.py      # 策略管线
-  ai/deepseek_client.py
+    indicators.py        # MA / 均量 / MACD / RSI / 形态
+    rules.py             # 信号 + 一票否决
+    pipeline.py          # 并发管线
+    filters.py           # 一字板剔除 / 行业去集中
+  ai/deepseek_client.py  # 缓存 + 预算
   decision/ranker.py
   notify/
-    dingtalk.py      # 钉钉发送（含加签）
-    templates.py     # 消息模板
-  storage/repository.py
-  main.py            # 入口
+    dingtalk.py          # 钉钉自定义机器人
+    email_client.py      # SMTP 兜底
+    templates.py
+  storage/repository.py  # SQLite + CSV
+  report/html_renderer.py# HTML/index 渲染
+  tracking/tracker.py    # T+N 收益、策略归因、AI 校准
+  main.py                # 入口（含子命令）
+tests/                   # pytest 单测
+.github/workflows/ci.yml
 deploy/cron.daily_stock
 ```
 
@@ -38,14 +54,34 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# 编辑 .env 填入 DEEPSEEK_API_KEY、DINGTALK_WEBHOOK（可选 DINGTALK_SECRET）
+# 编辑 .env：DEEPSEEK_API_KEY、DINGTALK_WEBHOOK、REPORT_HOST 等
 ```
 
-## 手动执行
+## CLI
 ```bash
 source .venv/bin/activate
-python -m src.main --slot midday   # 中午 12:00
-python -m src.main --slot close    # 下午 16:00
+
+# 正常运行（默认）
+python -m src.main run --slot midday   # 中午
+python -m src.main run --slot close    # 收盘
+
+# 干跑（不写库、不推送，仅生成报告到本地）
+python -m src.main dryrun --slot close
+
+# 仅更新跟踪表（补算 T+N 收益，可定时单独跑）
+python -m src.main track
+
+# 仅重建 reports/index.html 总索引
+python -m src.main rebuild-index
+
+# 兼容旧用法
+python -m src.main --slot midday
+```
+
+## 测试
+```bash
+pip install pytest
+pytest -q
 ```
 
 ## 配置定时任务

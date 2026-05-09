@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Dict, List, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -167,9 +170,17 @@ def fetch_recent_klines(code: str, days: int = 250) -> pd.DataFrame:
     end = datetime.now().strftime("%Y%m%d")
     # 留足缓冲（节假日 + 停牌）
     start = (datetime.now() - timedelta(days=int(days * 1.6) + 30)).strftime("%Y%m%d")
+    return _fetch_klines_by_range(code, start, end, days)
+
+
+def _fetch_klines_by_range(code: str, start_date: str, end_date: Optional[str], days: int) -> pd.DataFrame:
+    import akshare as ak
+
+    if not end_date:
+        end_date = datetime.now().strftime("%Y%m%d")
     try:
         df = ak.stock_zh_a_hist(
-            symbol=code, period="daily", start_date=start, end_date=end, adjust="qfq"
+            symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq"
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("获取K线失败 %s: %s", code, e)
@@ -188,8 +199,70 @@ def fetch_recent_klines(code: str, days: int = 250) -> pd.DataFrame:
         "涨跌幅": "pct_change",
     }
     df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+    if "date" in df.columns:
+        df["date"] = df["date"].astype(str)
     df = df.tail(days).reset_index(drop=True)
     return df
+
+
+# ---------- 并发批量拉取 ----------
+
+_RATE_LOCK = threading.Lock()
+_LAST_CALL_TS: Dict[int, float] = {}
+
+
+def _rate_limited_call(min_interval: float, fn, *args, **kwargs):
+    """简单 per-thread 节流：避免 AKShare 限流。"""
+    if min_interval > 0:
+        tid = threading.get_ident()
+        with _RATE_LOCK:
+            last = _LAST_CALL_TS.get(tid, 0.0)
+            now = time.time()
+            wait = (last + min_interval) - now
+            if wait > 0:
+                time.sleep(wait)
+            _LAST_CALL_TS[tid] = time.time()
+    return fn(*args, **kwargs)
+
+
+def fetch_klines_concurrent(
+    codes: List[str],
+    days: int,
+    cache=None,
+    max_workers: int = 6,
+    rate_interval: float = 0.1,
+    progress_every: int = 20,
+) -> Dict[str, pd.DataFrame]:
+    """并发拉取多只股票的 K 线，可选 KlineCache 加速。"""
+    out: Dict[str, pd.DataFrame] = {}
+    if not codes:
+        return out
+
+    def _one(code: str) -> Tuple[str, pd.DataFrame]:
+        try:
+            if cache is not None:
+                def _remote(c: str, start_yyyymmdd: str) -> pd.DataFrame:
+                    return _rate_limited_call(
+                        rate_interval, _fetch_klines_by_range, c, start_yyyymmdd, None, days,
+                    )
+                df = cache.get(code, days, _remote)
+            else:
+                df = _rate_limited_call(rate_interval, fetch_recent_klines, code, days)
+            return code, df
+        except Exception as e:  # noqa: BLE001
+            logger.warning("并发拉K线失败 %s: %s", code, e)
+            return code, pd.DataFrame()
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=max(1, max_workers)) as ex:
+        futures = [ex.submit(_one, c) for c in codes]
+        for fut in as_completed(futures):
+            code, df = fut.result()
+            out[code] = df
+            done += 1
+            if progress_every and done % progress_every == 0:
+                logger.info("K线并发进度 %d/%d", done, len(codes))
+    return out
 
 
 def fetch_spot_prices(codes: List[str]) -> Dict[str, Tuple[float, float, str]]:

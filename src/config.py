@@ -101,11 +101,42 @@ class Settings:
     focus_score: int = 80
     top_k_focus: int = 10
     ai_max_candidates: int = 20
+    ai_daily_budget: int = 0  # 0=不限
     push_top_n: int = 5  # 推送 AI 评分前 N 名（与重点票合并去重）
+
+    # 并发 / 缓存
+    klines_workers: int = 6
+    klines_days: int = 250
+    klines_cache_dir: Path = Path("./data/klines")
+    klines_cache_enabled: bool = True
+
+    # 行业 / 大盘 / 一字板
+    industry_diversify_enabled: bool = True
+    industry_max_per_industry: int = 2
+    industry_cache_path: Path = Path("./data/industry_map.json")
+    industry_cache_ttl_days: int = 7
+    market_filter_enabled: bool = True
+    market_filter_min_score: int = 90  # 大盘不利时仅推 score>=该值
+    universe_min_size: int = 50  # 选股池<该值则中止 (熝断)
+    yiziban_filter_enabled: bool = True
+
+    # 跟踪 / 评估
+    tracking_enabled: bool = True
+    tracking_lookback_days: int = 30
 
     # 报告 / HTML
     report_host: str = ""  # 例如 http://example.com/reports
     reports_dir: Path = Path("./reports")
+    report_kline_chart: bool = True  # 报告中嵌入 ECharts 小图
+
+    # SMTP 备用通道
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_sender: str = ""
+    smtp_recipients: List[str] = field(default_factory=list)
+    smtp_use_ssl: bool = True
 
     # 存储
     data_dir: Path = Path("./data")
@@ -170,9 +201,32 @@ def load_settings() -> Settings:
         focus_score=_get_int("FOCUS_SCORE", 80),
         top_k_focus=_get_int("TOP_K_FOCUS", 10),
         ai_max_candidates=_get_int("AI_MAX_CANDIDATES", 20),
+        ai_daily_budget=_get_int("AI_DAILY_BUDGET", 0),
         push_top_n=_get_int("PUSH_TOP_N", 5),
+        klines_workers=_get_int("KLINES_WORKERS", 6),
+        klines_days=_get_int("KLINES_DAYS", 250),
+        klines_cache_dir=Path(_get("KLINES_CACHE_DIR", "./data/klines")),
+        klines_cache_enabled=_get_bool("KLINES_CACHE_ENABLED", True),
+        industry_diversify_enabled=_get_bool("INDUSTRY_DIVERSIFY_ENABLED", True),
+        industry_max_per_industry=_get_int("INDUSTRY_MAX_PER_INDUSTRY", 2),
+        industry_cache_path=Path(_get("INDUSTRY_CACHE_PATH", "./data/industry_map.json")),
+        industry_cache_ttl_days=_get_int("INDUSTRY_CACHE_TTL_DAYS", 7),
+        market_filter_enabled=_get_bool("MARKET_FILTER_ENABLED", True),
+        market_filter_min_score=_get_int("MARKET_FILTER_MIN_SCORE", 90),
+        universe_min_size=_get_int("UNIVERSE_MIN_SIZE", 50),
+        yiziban_filter_enabled=_get_bool("YIZIBAN_FILTER_ENABLED", True),
+        tracking_enabled=_get_bool("TRACKING_ENABLED", True),
+        tracking_lookback_days=_get_int("TRACKING_LOOKBACK_DAYS", 30),
         report_host=_get("REPORT_HOST", "").rstrip("/"),
         reports_dir=Path(_get("REPORTS_DIR", "./reports")),
+        report_kline_chart=_get_bool("REPORT_KLINE_CHART", True),
+        smtp_host=_get("SMTP_HOST", ""),
+        smtp_port=_get_int("SMTP_PORT", 465),
+        smtp_user=_get("SMTP_USER", ""),
+        smtp_password=_get("SMTP_PASSWORD", ""),
+        smtp_sender=_get("SMTP_SENDER", ""),
+        smtp_recipients=_get_list("SMTP_RECIPIENTS"),
+        smtp_use_ssl=_get_bool("SMTP_USE_SSL", True),
         data_dir=Path(_get("DATA_DIR", "./data")),
         sqlite_path=Path(_get("SQLITE_PATH", "./data/dailystock.db")),
         log_level=_get("LOG_LEVEL", "INFO"),
@@ -182,4 +236,6 @@ def load_settings() -> Settings:
     s.log_dir.mkdir(parents=True, exist_ok=True)
     s.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     s.reports_dir.mkdir(parents=True, exist_ok=True)
+    if s.klines_cache_enabled:
+        s.klines_cache_dir.mkdir(parents=True, exist_ok=True)
     return s

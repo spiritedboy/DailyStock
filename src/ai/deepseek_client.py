@@ -93,23 +93,46 @@ def _parse(content: str) -> Optional[AiDecision]:
 
 
 class DeepSeekClient:
-    def __init__(self, api_key: str, base_url: str, model: str, timeout: int = 30, max_retry: int = 3):
+    def __init__(self, api_key: str, base_url: str, model: str, timeout: int = 30, max_retry: int = 3,
+                 repo=None, daily_budget: int = 0):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
         self.max_retry = max_retry
+        self.repo = repo
+        self.daily_budget = int(daily_budget or 0)
 
-    def evaluate(self, ev: StockEvaluation) -> AiDecision:
+    def evaluate(self, ev: StockEvaluation, run_date: str = "") -> AiDecision:
+        # 1) 缓存命中
+        if self.repo and run_date:
+            cached = self.repo.get_ai_cached(run_date, ev.snapshot.code)
+            if cached:
+                return AiDecision(
+                    score=int(cached["score"]), allow=bool(cached["allow"]),
+                    reason=cached["reason"] or "", raw=cached["raw"] or "", ok=True,
+                )
+        # 2) 预算上限
+        if self.repo and run_date and self.daily_budget > 0:
+            used = self.repo.get_ai_usage(run_date)
+            if used >= self.daily_budget:
+                return AiDecision(ok=False, reason=f"AI预算耗尽({used}/{self.daily_budget})")
         try:
             content = self._call(build_user_prompt(ev))
         except Exception as e:  # noqa: BLE001
             logger.warning("DeepSeek 调用失败 %s: %s", ev.snapshot.code, e)
             return AiDecision(ok=False, reason=f"AI失败:{type(e).__name__}")
+        if self.repo and run_date:
+            self.repo.incr_ai_usage(run_date, 1)
         parsed = _parse(content)
         if parsed is None:
             logger.warning("DeepSeek 解析失败 %s: %s", ev.snapshot.code, content[:200])
             return AiDecision(ok=False, raw=content, reason="解析失败")
+        if self.repo and run_date:
+            self.repo.save_ai_cached(
+                run_date, ev.snapshot.code,
+                parsed.score, parsed.allow, parsed.reason, parsed.raw,
+            )
         return parsed
 
     def _call(self, user: str) -> str:
