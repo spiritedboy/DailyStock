@@ -1,6 +1,6 @@
 # DailyStock
 
-每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股成交额前 100 名（排除 688 与 ST），跑常用策略筛选，调用 DeepSeek 判定是否可买入，按钉钉机器人格式推送“汇总 + 重点”消息，并将结果落地到 SQLite/CSV。
+每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股**成交额前 100 名 ∪ 同花顺热榜前 100 名**（去重、排除 688 与 ST），跑常用策略筛选（含**一票否决**），调用 DeepSeek 判定是否可买入，按钉钉机器人格式推送“汇总 + 重点”消息，并将结果落地到 SQLite/CSV。
 
 ## 功能模块
 - 数据获取：AKShare（`stock_zh_a_spot_em` 实时全市场 + `stock_zh_a_hist` 日线）
@@ -68,9 +68,24 @@ crontab -e
 
 均支持 `at.atMobiles` / `at.isAtAll`；机器人开启加签时通过 `DINGTALK_SECRET` 自动加签。
 
-## 默认策略（信号制）
-硬过滤：名称含 ST/*ST/退 或价格异常 → 直接淘汰。
-信号策略每命中 1 票，**hits ≥ `MIN_SIGNALS`（默认 2）进入候选池**：
+## 选股范围
+- **成交额 Top N**（`TOP_N_TURNOVER`，默认 100）∪ **同花顺热榜 Top N**（`TOP_N_HOT`，默认 100）
+- 按代码去重后，**逐只**过策略。钉钉表格中会展示来源（`turnover` / `ths_hot`）
+- 数据源：AKShare `stock_zh_a_spot_em` + `stock_hot_rank_wc`（问财/同花顺热榜）
+
+## 默认策略（按优先级：硬过滤 → 一票否决 → 信号）
+
+### 1）硬过滤
+名称含 ST/*ST/退 或价格异常 → 直接淘汰。
+
+### 2）一票否决（命中任一条直接出局，不再计信号）
+
+| 策略 | 逻辑 | 阈值变量 |
+| --- | --- | --- |
+| VETO_STAGNATION 高位滞涨（防主力派发） | “高位” 且 “放量” 且 “滞涨”同时成立。高位=20日累计涨幅>`VETO_STAGNATION_PCT_20D` 或 距52周高点 < `VETO_STAGNATION_NEAR_52W`；放量=当日量/5日均量>=`VETO_STAGNATION_VOL_RATIO`；滞涨=今日涨幅<`VETO_STAGNATION_PCT_TODAY` 或 (high-close)/close>`VETO_STAGNATION_UPPER_SHADOW`% | `STRAT_VETO_STAGNATION_ENABLED` |
+| VETO_BIAS 乖离率过大（防短线回调踩踏） | close 高于 MA10 超 `VETO_BIAS10`% 或 高于 MA20 超 `VETO_BIAS20`% | `STRAT_VETO_BIAS_ENABLED` |
+
+### 3）信号策略（每命中 1 票，hits ≥ `MIN_SIGNALS` 进候选池）
 
 | 策略 | 说明 | 开关 |
 | --- | --- | --- |
@@ -83,12 +98,12 @@ crontab -e
 | PCT_RANGE | 涨跌幅 ∈ [`PCT_MIN`, `PCT_MAX`] | `STRAT_PCT_ENABLED` |
 | LIQUIDITY | 成交额 ≥ `TURNOVER_FLOOR` 且振幅 ≤ `AMPLITUDE_CAP` | `STRAT_LIQUIDITY_ENABLED` |
 
-所有阈值可在 `.env` 内调整；Top 100 股票逐只过策略，候选池逐只调用 DeepSeek。
+所有阈值可在 `.env` 内调整；候选池逻辑为：**硬过滤 → 一票否决 → 信号≥2**，候选池逐只调用 DeepSeek。
 
 ## DeepSeek 输入内容
 对每只候选股，提示词会包含：
-- 基本信息：代码、名称、最新价、涨跌幅、成交量/额、振幅
-- 技术指标：MA5/10/20/60、MACD(DIF/DEA/HIST)、RSI14、近 20 日高/低、量比
+- 基本信息：代码、名称、**来源**(turnover/ths_hot)、最新价、涨跌幅、成交量/额、振幅、开/高/低/收
+- 技术指标：MA5/10/20/60、**BIAS10/20**、**20日累计涨幅**、MACD(DIF/DEA/HIST)、RSI14、近 20 日高/低、**52周高点**、量比
 - 策略命中：命中信号列表、未命中列表、明细
 
 返回统一为 JSON `{score, allow, reason}`，`allow=true 且 score ≥ FOCUS_SCORE` 认为重点。

@@ -21,7 +21,7 @@ SCHEMA = [
         run_id TEXT PRIMARY KEY,
         run_date TEXT NOT NULL,
         run_slot TEXT NOT NULL,
-        total INTEGER, candidates INTEGER,
+        total INTEGER, vetoed INTEGER, candidates INTEGER,
         ai_called INTEGER, ai_allowed INTEGER, focus_count INTEGER,
         created_at TEXT NOT NULL
     )
@@ -34,11 +34,13 @@ SCHEMA = [
         run_slot TEXT NOT NULL,
         code TEXT NOT NULL,
         name TEXT,
+        sources TEXT,
         price REAL, pct_change REAL, turnover REAL, amplitude REAL,
         ma5 REAL, ma10 REAL, ma20 REAL,
         macd_hist REAL, rsi14 REAL, volume_ratio REAL,
-        risk_passed INTEGER, hits INTEGER,
-        signals TEXT, misses TEXT,
+        bias10 REAL, bias20 REAL, pct_20d REAL, high52w REAL,
+        risk_passed INTEGER, vetoed INTEGER, veto_reasons TEXT,
+        hits INTEGER, signals TEXT, misses TEXT,
         ai_ok INTEGER, ai_score INTEGER, ai_allow INTEGER, ai_reason TEXT,
         is_candidate INTEGER, is_focus INTEGER,
         created_at TEXT NOT NULL,
@@ -87,13 +89,15 @@ class Repository:
 
     def save_run(
         self, run_id: str, run_date: str, run_slot: str,
-        total: int, candidates: int, ai_called: int, ai_allowed: int, focus_count: int,
+        total: int, vetoed: int, candidates: int,
+        ai_called: int, ai_allowed: int, focus_count: int,
     ) -> None:
         now = datetime.now().isoformat(timespec="seconds")
         with self._conn() as c:
             c.execute(
-                "INSERT OR REPLACE INTO runs VALUES (?,?,?,?,?,?,?,?,?)",
-                (run_id, run_date, run_slot, total, candidates, ai_called, ai_allowed, focus_count, now),
+                "INSERT OR REPLACE INTO runs VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (run_id, run_date, run_slot, total, vetoed, candidates,
+                 ai_called, ai_allowed, focus_count, now),
             )
 
     def save_picks(self, run_id: str, run_date: str, run_slot: str, evals: Iterable[StockEvaluation]) -> None:
@@ -103,11 +107,17 @@ class Repository:
             s, ind, st, ai = e.snapshot, e.indicators, e.strategy, e.ai
             rows.append((
                 run_id, run_date, run_slot, s.code, s.name,
+                ",".join(s.sources),
                 s.price, s.pct_change, s.turnover, s.amplitude,
                 ind.ma5, ind.ma10, ind.ma20,
                 ind.macd_hist, ind.rsi14, ind.volume_ratio,
-                1 if st.risk_passed else 0, st.hits,
-                ",".join(st.signals), " | ".join(st.misses),
+                ind.bias10, ind.bias20, ind.pct_20d, ind.high52w,
+                1 if st.risk_passed else 0,
+                1 if st.vetoed else 0,
+                " | ".join(st.veto_reasons),
+                st.hits,
+                ",".join(st.signals),
+                " | ".join(st.misses),
                 1 if (ai and ai.ok) else 0,
                 ai.score if ai else 0,
                 1 if (ai and ai.allow) else 0,
@@ -120,13 +130,15 @@ class Repository:
             c.executemany(
                 """
                 INSERT OR REPLACE INTO picks
-                (run_id, run_date, run_slot, code, name,
+                (run_id, run_date, run_slot, code, name, sources,
                  price, pct_change, turnover, amplitude,
                  ma5, ma10, ma20, macd_hist, rsi14, volume_ratio,
-                 risk_passed, hits, signals, misses,
+                 bias10, bias20, pct_20d, high52w,
+                 risk_passed, vetoed, veto_reasons,
+                 hits, signals, misses,
                  ai_ok, ai_score, ai_allow, ai_reason,
                  is_candidate, is_focus, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 rows,
             )
@@ -140,7 +152,8 @@ class Repository:
             return cur.fetchone() is not None
 
     def save_notification(
-        self, run_id: str, run_date: str, run_slot: str, kind: str, target: str, ok: bool, detail: str = "",
+        self, run_id: str, run_date: str, run_slot: str,
+        kind: str, target: str, ok: bool, detail: str = "",
     ) -> None:
         now = datetime.now().isoformat(timespec="seconds")
         with self._conn() as c:
@@ -159,19 +172,26 @@ class Repository:
         with path.open("w", encoding="utf-8-sig", newline="") as f:
             w = csv.writer(f)
             w.writerow([
-                "code", "name", "price", "pct_change", "turnover", "amplitude",
+                "code", "name", "sources",
+                "price", "pct_change", "turnover", "amplitude",
                 "ma5", "ma10", "ma20", "macd_hist", "rsi14", "volume_ratio",
-                "risk_passed", "hits", "signals", "misses",
+                "bias10", "bias20", "pct_20d", "high52w",
+                "risk_passed", "vetoed", "veto_reasons",
+                "hits", "signals", "misses",
                 "ai_ok", "ai_score", "ai_allow", "ai_reason",
                 "is_candidate", "is_focus",
             ])
             for e in evals:
                 s, ind, st, ai = e.snapshot, e.indicators, e.strategy, e.ai
                 w.writerow([
-                    s.code, s.name, s.price, s.pct_change, s.turnover, s.amplitude,
-                    ind.ma5, ind.ma10, ind.ma20, ind.macd_hist, ind.rsi14, ind.volume_ratio,
-                    int(st.risk_passed), st.hits,
-                    ",".join(st.signals), " | ".join(st.misses),
+                    s.code, s.name, ",".join(s.sources),
+                    s.price, s.pct_change, s.turnover, s.amplitude,
+                    ind.ma5, ind.ma10, ind.ma20,
+                    ind.macd_hist, ind.rsi14, ind.volume_ratio,
+                    ind.bias10, ind.bias20, ind.pct_20d, ind.high52w,
+                    int(st.risk_passed), int(st.vetoed),
+                    " | ".join(st.veto_reasons),
+                    st.hits, ",".join(st.signals), " | ".join(st.misses),
                     int(bool(ai and ai.ok)),
                     ai.score if ai else 0,
                     int(bool(ai and ai.allow)),

@@ -8,7 +8,7 @@ from datetime import datetime
 
 from .ai.deepseek_client import DeepSeekClient
 from .config import load_settings
-from .data.fetcher import fetch_top_n_by_turnover
+from .data.fetcher import fetch_universe
 from .decision.ranker import select_focus
 from .logging_setup import setup_logging
 from .notify.dingtalk import DingTalkClient
@@ -43,20 +43,23 @@ def run(slot: str) -> int:
     run_id = repo.new_run_id()
     logger.info("开始任务 run_id=%s slot=%s date=%s", run_id, slot, run_date)
 
-    # 1) 取 Top N
-    snapshots = fetch_top_n_by_turnover(
-        settings.top_n, settings.exclude_prefixes, settings.exclude_name_keywords
+    # 1) 选股池：成交额TopN ∪ 同花顺热榜TopN
+    snapshots = fetch_universe(
+        top_n_turnover=settings.top_n_turnover,
+        top_n_hot=settings.top_n_hot,
+        exclude_prefixes=settings.exclude_prefixes,
+        exclude_name_keywords=settings.exclude_name_keywords,
     )
     failures: dict = {}
     if not snapshots:
-        failures["data"] = "行情为空，可能为非交易时段或数据源异常"
+        failures["data"] = "选股池为空，可能为非交易时段或数据源异常"
 
-    # 2) 全量过策略，得到 evaluations
-    evals = run_pipeline(snapshots, settings.strategy, min_signals=settings.strategy.min_signals)
+    # 2) 全量过策略
+    evals = run_pipeline(snapshots, settings.strategy)
+    vetoed = [e for e in evals if e.strategy.vetoed]
     candidates = [e for e in evals if e.is_candidate]
-    logger.info("候选池(hits>=%d): %d", settings.strategy.min_signals, len(candidates))
+    logger.info("否决=%d 候选(hits>=%d)=%d", len(vetoed), settings.strategy.min_signals, len(candidates))
 
-    # 按 hits 降序作为 AI 调用顺序，必要时再截断
     candidates.sort(key=lambda e: e.strategy.hits, reverse=True)
     ai_call_list = candidates
     if settings.ai_max_candidates > 0:
@@ -82,7 +85,7 @@ def run(slot: str) -> int:
     else:
         logger.info("候选池为空，跳过 DeepSeek")
 
-    # 4) 决策分层
+    # 4) 重点
     focus = select_focus(evals, settings.focus_score, settings.top_k_focus)
 
     # 5) 持久化
@@ -96,10 +99,10 @@ def run(slot: str) -> int:
         at_mobiles=settings.dingtalk_at_mobiles,
         at_all=settings.dingtalk_at_all,
     )
-
     title, text = render_summary_markdown(
         slot=slot,
         total=len(snapshots),
+        vetoed=len(vetoed),
         candidates=len(candidates),
         ai_called=ai_called,
         ai_allowed=ai_allowed,
@@ -126,14 +129,15 @@ def run(slot: str) -> int:
     repo.save_run(
         run_id, run_date, slot,
         total=len(snapshots),
+        vetoed=len(vetoed),
         candidates=len(candidates),
         ai_called=ai_called,
         ai_allowed=ai_allowed,
         focus_count=len(focus),
     )
     logger.info(
-        "完成: total=%d cand=%d ai_called=%d ai_allowed=%d focus=%d",
-        len(snapshots), len(candidates), ai_called, ai_allowed, len(focus),
+        "完成: total=%d vetoed=%d cand=%d ai_called=%d ai_allowed=%d focus=%d",
+        len(snapshots), len(vetoed), len(candidates), ai_called, ai_allowed, len(focus),
     )
     return 0
 

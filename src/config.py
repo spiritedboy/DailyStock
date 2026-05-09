@@ -43,6 +43,16 @@ def _get_list(key: str, default: str = "") -> List[str]:
 class StrategyConfig:
     # 硬过滤
     risk_enabled: bool = True
+    # 一票否决
+    veto_stagnation_enabled: bool = True
+    veto_stagnation_pct_20d: float = 30.0  # 20日累计涨幅阈值 (%)
+    veto_stagnation_near_52w: float = 0.10  # 距 52 周高点小于该比例认为高位
+    veto_stagnation_vol_ratio: float = 2.0  # 当日量/5日均量
+    veto_stagnation_pct_today: float = 2.0  # 今日涨幅<该值为滞涨 (%)
+    veto_stagnation_upper_shadow: float = 3.0  # 上影/close (%)
+    veto_bias_enabled: bool = True
+    veto_bias10: float = 15.0  # close 高于 MA10 超过 % 则否决
+    veto_bias20: float = 20.0
     # 信号策略
     ma_enabled: bool = True
     macd_enabled: bool = True
@@ -77,7 +87,8 @@ class Settings:
     dingtalk_at_all: bool = False
 
     # 选股范围
-    top_n: int = 100
+    top_n_turnover: int = 100
+    top_n_hot: int = 100
     exclude_prefixes: List[str] = field(default_factory=lambda: ["688"])
     exclude_name_keywords: List[str] = field(
         default_factory=lambda: ["ST", "*ST", "退"]
@@ -119,11 +130,21 @@ def load_settings() -> Settings:
         dingtalk_secret=_get("DINGTALK_SECRET"),
         dingtalk_at_mobiles=_get_list("DINGTALK_AT_MOBILES"),
         dingtalk_at_all=_get_bool("DINGTALK_AT_ALL", False),
-        top_n=_get_int("TOP_N", 100),
+        top_n_turnover=_get_int("TOP_N_TURNOVER", _get_int("TOP_N", 100)),
+        top_n_hot=_get_int("TOP_N_HOT", 100),
         exclude_prefixes=_get_list("EXCLUDE_PREFIXES", "688"),
         exclude_name_keywords=_get_list("EXCLUDE_NAME_KEYWORDS", "ST,*ST,退"),
         strategy=StrategyConfig(
             risk_enabled=_get_bool("STRAT_RISK_ENABLED", True),
+            veto_stagnation_enabled=_get_bool("STRAT_VETO_STAGNATION_ENABLED", True),
+            veto_stagnation_pct_20d=_get_float("VETO_STAGNATION_PCT_20D", 30.0),
+            veto_stagnation_near_52w=_get_float("VETO_STAGNATION_NEAR_52W", 0.10),
+            veto_stagnation_vol_ratio=_get_float("VETO_STAGNATION_VOL_RATIO", 2.0),
+            veto_stagnation_pct_today=_get_float("VETO_STAGNATION_PCT_TODAY", 2.0),
+            veto_stagnation_upper_shadow=_get_float("VETO_STAGNATION_UPPER_SHADOW", 3.0),
+            veto_bias_enabled=_get_bool("STRAT_VETO_BIAS_ENABLED", True),
+            veto_bias10=_get_float("VETO_BIAS10", 15.0),
+            veto_bias20=_get_float("VETO_BIAS20", 20.0),
             ma_enabled=_get_bool("STRAT_MA_ENABLED", True),
             macd_enabled=_get_bool("STRAT_MACD_ENABLED", True),
             rsi_enabled=_get_bool("STRAT_RSI_ENABLED", True),

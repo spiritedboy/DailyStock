@@ -1,17 +1,8 @@
-"""信号制策略集合。
+"""信号制策略 + 一票否决策略。
 
-硬过滤：
-- risk: 名称含 ST/*ST/退、价格<=0 直接淘汰
-
-信号策略（每命中算 1 票，hits>=MIN_SIGNALS 进候选池）：
-1. ma_cross    均线金叉/多头排列：MA5 上穿 MA10 (或多头 MA5>MA10>MA20)
-2. macd        MACD 金叉或柱状由负转正
-3. rsi         RSI 健康区 30-70（趋势型）或 <30 超卖反弹（含当日上涨）
-4. breakout    收盘突破近 20 日高点
-5. pattern     双底形态或多头排列+创新高（非头肩顶）
-6. volume      当日成交量 >= 近5日均量 × ratio
-7. pct_range   涨跌幅在 [pct_min, pct_max]
-8. liquidity   成交额 >= floor 且振幅 <= cap
+硬过滤(risk)：名称含 ST/*ST/退、价格<=0 → 直接淘汰
+一票否决(veto)：命中任意一条直接出局，不再计信号
+信号策略：每命中算 1 票，hits>=MIN_SIGNALS 进候选池
 """
 from __future__ import annotations
 
@@ -59,11 +50,34 @@ def compute_indicators(snapshot: StockSnapshot, klines: pd.DataFrame) -> Indicat
     h20, l20 = recent_high_low(close, 20)
     ind.high20, ind.low20 = h20, l20
 
+    # 52 周高点（约 250 个交易日）
+    if "high" in klines.columns and len(klines) >= 60:
+        win = min(252, len(klines))
+        ind.high52w = float(klines["high"].tail(win).max())
+    elif len(close) >= 60:
+        win = min(252, len(close))
+        ind.high52w = float(close.tail(win).max())
+
+    # 20 日累计涨幅
+    if len(close) >= 21:
+        c0 = float(close.iloc[-21])
+        c1 = float(close.iloc[-1])
+        if c0 > 0:
+            ind.pct_20d = (c1 / c0 - 1) * 100
+
+    # 量
     avg5 = avg_volume(klines, 5)
     ind.avg_vol5 = avg5
-    cur_vol = snapshot.volume or float(klines["volume"].iloc[-1]) if "volume" in klines.columns else 0
+    cur_vol = snapshot.volume or (float(klines["volume"].iloc[-1]) if "volume" in klines.columns else 0)
     if avg5 and avg5 == avg5 and avg5 > 0 and cur_vol:
         ind.volume_ratio = cur_vol / avg5
+
+    # BIAS
+    cur_close = snapshot.price or float(close.iloc[-1])
+    if ind.ma10 and ind.ma10 == ind.ma10 and ind.ma10 > 0:
+        ind.bias10 = (cur_close - ind.ma10) / ind.ma10 * 100
+    if ind.ma20 and ind.ma20 == ind.ma20 and ind.ma20 > 0:
+        ind.bias20 = (cur_close - ind.ma20) / ind.ma20 * 100
     return ind
 
 
@@ -76,6 +90,68 @@ def risk_check(snapshot: StockSnapshot) -> Tuple[bool, str]:
     if snapshot.price <= 0:
         return False, "价格异常(可能停牌)"
     return True, "OK"
+
+
+# ----- 一票否决：高位滞涨 -----
+def veto_high_stagnation(
+    snapshot: StockSnapshot,
+    klines: pd.DataFrame,
+    ind: IndicatorBundle,
+    cfg: StrategyConfig,
+) -> Tuple[bool, str]:
+    """同时满足：高位 + 放量 + 滞涨 → 否决。返回 (vetoed, reason)。"""
+    if klines is None or klines.empty or "close" not in klines.columns:
+        return False, ""
+
+    # 高位：20日累计涨幅 > 阈值，或当前价距 52 周高点 < 10%
+    high_20 = ind.pct_20d == ind.pct_20d and ind.pct_20d > cfg.veto_stagnation_pct_20d
+    near_52w = (
+        ind.high52w == ind.high52w
+        and ind.high52w > 0
+        and snapshot.price > 0
+        and (snapshot.price >= ind.high52w * (1 - cfg.veto_stagnation_near_52w))
+    )
+    is_high = bool(high_20 or near_52w)
+    if not is_high:
+        return False, ""
+
+    # 放量：当日量 > 5日均量 × 阈值
+    is_huge_vol = (
+        ind.volume_ratio == ind.volume_ratio
+        and ind.volume_ratio >= cfg.veto_stagnation_vol_ratio
+    )
+    if not is_huge_vol:
+        return False, ""
+
+    # 滞涨：今日涨幅 < 阈值，或长上影 (high-close)/close > 阈值
+    pct_low = snapshot.pct_change < cfg.veto_stagnation_pct_today
+    upper_shadow_ratio = 0.0
+    if snapshot.price > 0 and snapshot.high > 0 and snapshot.high >= snapshot.price:
+        upper_shadow_ratio = (snapshot.high - snapshot.price) / snapshot.price * 100
+    long_upper = upper_shadow_ratio > cfg.veto_stagnation_upper_shadow
+    is_stagnant = bool(pct_low or long_upper)
+    if not is_stagnant:
+        return False, ""
+
+    high_desc = (
+        f"20日+{ind.pct_20d:.1f}%" if high_20 else
+        f"距52周高点 {((ind.high52w - snapshot.price)/ind.high52w*100):.1f}%"
+    )
+    stagnation_desc = (
+        f"今日{snapshot.pct_change:.2f}%" if pct_low else f"上影{upper_shadow_ratio:.1f}%"
+    )
+    return True, (
+        f"高位滞涨：{high_desc} + 量比{ind.volume_ratio:.2f}x + {stagnation_desc}"
+    )
+
+
+# ----- 一票否决：乖离率过大 -----
+def veto_bias(ind: IndicatorBundle, cfg: StrategyConfig) -> Tuple[bool, str]:
+    if ind.bias10 == ind.bias10 and ind.bias10 > cfg.veto_bias10:
+        return True, f"BIAS10={ind.bias10:.2f}% > {cfg.veto_bias10}%"
+    if ind.bias20 == ind.bias20 and ind.bias20 > cfg.veto_bias20:
+        return True, f"BIAS20={ind.bias20:.2f}% > {cfg.veto_bias20}%"
+    return False, ""
 
 
 # ----- 信号策略 -----
@@ -173,7 +249,7 @@ def evaluate(
     result = StrategyResult()
     ind = compute_indicators(snapshot, klines)
 
-    # 硬过滤
+    # 1) 硬过滤
     if cfg.risk_enabled:
         ok, msg = risk_check(snapshot)
         result.risk_passed = ok
@@ -182,7 +258,23 @@ def evaluate(
             result.misses.append(f"[RISK] {msg}")
             return result, ind
 
-    # 信号策略
+    # 2) 一票否决
+    if cfg.veto_stagnation_enabled:
+        v, msg = veto_high_stagnation(snapshot, klines, ind, cfg)
+        if v:
+            result.vetoed = True
+            result.veto_reasons.append(f"[VETO_STAGNATION] {msg}")
+            result.details.append(f"[VETO_STAGNATION] {msg}")
+    if cfg.veto_bias_enabled:
+        v, msg = veto_bias(ind, cfg)
+        if v:
+            result.vetoed = True
+            result.veto_reasons.append(f"[VETO_BIAS] {msg}")
+            result.details.append(f"[VETO_BIAS] {msg}")
+    if result.vetoed:
+        return result, ind
+
+    # 3) 信号策略
     signal_runners = [
         ("MA_CROSS", cfg.ma_enabled, lambda: sig_ma_cross(klines, ind)),
         ("MACD", cfg.macd_enabled, lambda: sig_macd(ind)),

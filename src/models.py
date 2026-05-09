@@ -14,6 +14,11 @@ class StockSnapshot:
     volume: float = 0.0
     turnover: float = 0.0
     amplitude: float = 0.0
+    high: float = 0.0
+    low: float = 0.0
+    open: float = 0.0
+    pre_close: float = 0.0
+    sources: List[str] = field(default_factory=list)  # 来源: turnover / ths_hot
     extra: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -22,7 +27,6 @@ class StockSnapshot:
 
 @dataclass
 class IndicatorBundle:
-    """一只股票计算后的核心指标，用于策略与AI输入。"""
     ma5: float = float("nan")
     ma10: float = float("nan")
     ma20: float = float("nan")
@@ -34,8 +38,12 @@ class IndicatorBundle:
     rsi14: float = float("nan")
     high20: float = float("nan")
     low20: float = float("nan")
+    high52w: float = float("nan")
+    pct_20d: float = float("nan")  # 20日累计涨幅 %
     avg_vol5: float = float("nan")
-    volume_ratio: float = float("nan")  # 当日量 / 5日均量
+    volume_ratio: float = float("nan")
+    bias10: float = float("nan")  # (close-MA10)/MA10 * 100
+    bias20: float = float("nan")
 
     def to_dict(self) -> Dict[str, float]:
         return asdict(self)
@@ -43,13 +51,15 @@ class IndicatorBundle:
 
 @dataclass
 class StrategyResult:
-    """信号制策略评估：每条信号策略命中算 1 票。"""
-    risk_passed: bool = True  # 硬过滤是否通过
+    """硬过滤 + 一票否决 + 信号制策略评估结果。"""
+    risk_passed: bool = True
     risk_reason: str = ""
+    vetoed: bool = False
+    veto_reasons: List[str] = field(default_factory=list)
     hits: int = 0
-    signals: List[str] = field(default_factory=list)  # 命中的信号策略名
-    misses: List[str] = field(default_factory=list)  # 未命中信号
-    details: List[str] = field(default_factory=list)  # 每条信号的描述
+    signals: List[str] = field(default_factory=list)
+    misses: List[str] = field(default_factory=list)
+    details: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -70,7 +80,8 @@ class StockEvaluation:
 
     @property
     def is_candidate(self) -> bool:
-        return self.strategy.risk_passed and self.strategy.hits >= 2
+        st = self.strategy
+        return st.risk_passed and not st.vetoed and st.hits >= 2
 
     @property
     def is_focus(self) -> bool:
