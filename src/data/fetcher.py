@@ -221,8 +221,9 @@ def fetch_universe(
     spot_sorted = spot.dropna(subset=["turnover"]).sort_values("turnover", ascending=False)
     top_turnover_codes: List[str] = spot_sorted.head(top_n_turnover)["code"].tolist()
 
-    # 同花顺热榜
+    # 热榜（外部 API，不稳定）
     hot_codes = _fetch_ths_hot_codes(top_n_hot)
+    hot_source_label = "ths_hot"
     # 过滤排除
     spot_idx: Dict[str, pd.Series] = {row["code"]: row for _, row in spot.iterrows()}
     hot_codes_filtered: List[str] = []
@@ -244,9 +245,27 @@ def fetch_universe(
             len(miss_excluded), miss_excluded[:5],
         )
 
+    # 兜底：热榜不可用时，用 spot 中"涨幅榜前 N"补充（剔除一字板会在下游 filters 里做）
+    if not hot_codes_filtered and "pct_change" in spot.columns:
+        gainers = (
+            spot.dropna(subset=["pct_change"])
+                .sort_values("pct_change", ascending=False)
+                .head(top_n_hot * 2)  # 多取一些，下面再过滤
+        )
+        for _, row in gainers.iterrows():
+            c = row["code"]
+            if _is_excluded(c, row["name"], exclude_prefixes, exclude_name_keywords):
+                continue
+            hot_codes_filtered.append(c)
+            if len(hot_codes_filtered) >= top_n_hot:
+                break
+        hot_source_label = "gainers"
+        logger.info("热榜源全部失败，已用涨幅榜前 %d 兜底", len(hot_codes_filtered))
+
     logger.info(
-        "成交额TopN=%d 命中=%d；热榜TopN=%d 过滤后=%d",
-        top_n_turnover, len(top_turnover_codes), top_n_hot, len(hot_codes_filtered),
+        "成交额TopN=%d 命中=%d；热榜TopN=%d 过滤后=%d (来源=%s)",
+        top_n_turnover, len(top_turnover_codes), top_n_hot,
+        len(hot_codes_filtered), hot_source_label,
     )
 
     # 合并去重并记录来源（保持顺序：先 turnover，再 hot 补）
@@ -257,7 +276,7 @@ def fetch_universe(
         if c not in order:
             order.append(c)
     for c in hot_codes_filtered:
-        sources.setdefault(c, set()).add("ths_hot")
+        sources.setdefault(c, set()).add(hot_source_label)
         if c not in order:
             order.append(c)
 
