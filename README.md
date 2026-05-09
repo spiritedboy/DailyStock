@@ -57,13 +57,21 @@ cp .env.example .env
 # 编辑 .env：DEEPSEEK_API_KEY、DINGTALK_WEBHOOK、REPORT_HOST 等
 ```
 
-## CLI
+## CLI 子命令速查
+
+| 命令 | 何时用 | 副作用 |
+| --- | --- | --- |
+| `run --slot midday\|close` | **正式运行**（cron 自动调） | 写库 + 写报告 + 推钉钉 + 跟踪 |
+| `dryrun --slot midday\|close` | **测试 / 调参 / 新环境验证** | 只生成 HTML 到本地，**不写库、不推钉钉、不更新跟踪表** |
+| `track` | 单独补算历史推送的 T+N 收益 | 只更新 `pick_returns` 表 |
+| `rebuild-index` | 改了 HTML 模板想重刷总索引 | 只重写 `reports/index.html` |
+
 ```bash
 source .venv/bin/activate
 
 # 正常运行（默认）
-python -m src.main run --slot midday   # 中午
-python -m src.main run --slot close    # 收盘
+python -m src.main run --slot midday   # 中午 12:00
+python -m src.main run --slot close    # 下午 16:00
 
 # 干跑（不写库、不推送，仅生成报告到本地）
 python -m src.main dryrun --slot close
@@ -77,6 +85,63 @@ python -m src.main rebuild-index
 # 兼容旧用法
 python -m src.main --slot midday
 ```
+
+### 典型场景：全新环境上线
+
+#### 周末/非交易时段：装环境 + 干跑测试
+
+```bash
+# 1) 装依赖
+cd /home/yyf/DailyStock
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt pytest
+cp .env.example .env
+# 编辑 .env：DEEPSEEK_API_KEY、DINGTALK_WEBHOOK、REPORT_HOST 等
+
+# 2) 跑单元测试（不联网）
+pytest -q
+
+# 3) 干跑两次（看 reports/{YYYY-MM}/{MM-DD}-{noon|afternoon}.html 是否正常）
+#    注意：周末/盘前 fetch_universe 可能为空 → 会被 UNIVERSE_MIN_SIZE 拦截
+#    临时把 .env 里 UNIVERSE_MIN_SIZE=0 即可干跑出报告
+python -m src.main dryrun --slot midday
+python -m src.main dryrun --slot close
+
+# 4) 验证钉钉通道（用最小参数避免误推太多）
+#    临时把 .env：PUSH_TOP_N=1、TOP_N_TURNOVER=20、TOP_N_HOT=20
+python -m src.main run --slot close   # 看钉钉是否收到 URL
+
+# 5) 数据预热（首次会拉所有股票日线，比较慢；之后只增量）
+#    dryrun 会把 K 线缓存写到 ./data/klines/*.csv
+python -m src.main dryrun --slot close
+```
+
+#### 交易日：装 cron 自动跑
+
+```bash
+# 1) 把 .env 改回正式参数（UNIVERSE_MIN_SIZE=50、PUSH_TOP_N=5、TOP_N_*=100）
+
+# 2) 装定时任务
+crontab -e
+# 复制 deploy/cron.daily_stock 三行：
+#   12:00 run midday
+#   16:00 run close
+#   17:30 track（补 T+N 收益）
+
+# 3) 验证时区
+timedatectl | grep "Time zone"        # 必须 Asia/Shanghai
+# 如不对：sudo timedatectl set-timezone Asia/Shanghai
+```
+
+### 日常维护
+
+- **改了 HTML 模板/想刷新索引**：`python -m src.main rebuild-index`
+- **手动补一次历史收益**（比如停了几天 cron）：`python -m src.main track`
+- **临时调参不想污染数据库**：永远先 `dryrun` 看效果再 `run`
+- **想重发当次钉钉**：删 `notifications` 表里对应行 → 再 `run`
+
+> ⚠️ `dryrun` 不写库、不更新 `pick_returns`，所以**只用 dryrun 测试期间，跟踪表不会涨数据**。要正式 `run` 才会逐日累积。
 
 ## 测试
 ```bash
