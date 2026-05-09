@@ -294,5 +294,6 @@ http://your.host/reports/2026-05/05-09-afternoon.html
 - 热榜日志 `热榜源 ... 命中但无代码列`：正常，自动跳过到下一源
 - 行业映射卡住：30 分钟内只重试一次（`industry_map.fail` 标记），如要强制刷新删除 `data/industry_map.fail` 即可
 - AI 报告反复出现旧理由：`prompt_ver` 已会自动让旧缓存失效；如有意外可 `--no-ai-cache` 重跑或 `sqlite3 data/dailystock.db "DELETE FROM ai_cache WHERE run_date='YYYY-MM-DD';"`
+- DeepSeek 超时（`Read timed out`）：API 高负载或故障。缓解方案：(1) 改 `.env` `DEEPSEEK_TIMEOUT=60`（从 30 改到 60 秒）；(2) `AI_MAX_CANDIDATES=5`（降低并发，从 0 全量改为只调前 5 只候选，减轻 API 压力）；(3) 如果还是频繁超时说明 DeepSeek 那边确实有问题，建议降档次、稍后重跑或联系官方
 - DeepSeek 失败：会标记 `ok=false` 不进入重点；查看 `logs/dailystock.log`
 - 钉钉错误码：`310000`(签名错误)、`130101`(频率限制)、`410100`(关键字未命中) 等
