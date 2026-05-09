@@ -140,7 +140,10 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
         "stock_hot_search_baidu",
         "stock_hot_rank_latest_em",
     )
-    code_col_candidates = ("股票代码", "代码", "code", "symbol", "Symbol", "证券代码")
+    code_col_candidates = (
+        "股票代码", "代码", "code", "symbol", "Symbol", "证券代码",
+        "名称/代码", "名称代码", "股票名称代码",
+    )
     df = None
     code_col = None
     tried = []
@@ -152,8 +155,17 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
         try:
             d = fn()
             if d is None or d.empty:
+                logger.info("热榜源 %s 返回空，继续尝试下一源", fname)
                 continue
             cc = next((c for c in code_col_candidates if c in d.columns), None)
+            if not cc:
+                # 兜底：在任意字符串列中尝试抽 6 位数字（例如百度热搜可能返回合并列）
+                for c in d.columns:
+                    sample = d[c].astype(str).head(20).str.extract(r"(\d{6})", expand=False).dropna()
+                    if len(sample) >= max(3, len(d) // 3):
+                        cc = c
+                        logger.info("热榜源 %s 使用兜底列 %s 提取代码", fname, c)
+                        break
             if not cc:
                 logger.info("热榜源 %s 命中但无代码列 columns=%s，继续尝试下一源",
                             fname, list(d.columns))
@@ -162,7 +174,7 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
             logger.info("热榜源 %s 命中 (%d 行，代码列=%s)", fname, len(df), code_col)
             break
         except Exception as e:  # noqa: BLE001
-            logger.debug("热榜源 %s 失败: %s", fname, e)
+            logger.info("热榜源 %s 调用失败: %s", fname, e)
     if df is None or df.empty or not code_col:
         if tried:
             logger.info("热榜源全部不可用 (尝试过 %s)，跳过热榜补充", ",".join(tried))
