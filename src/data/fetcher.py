@@ -127,27 +127,40 @@ def _load_spot() -> pd.DataFrame:
 
 
 def _fetch_ths_hot_codes(top_n: int) -> List[str]:
-    """热榜前 N 的股票代码：依次尝试问财→东财→同花顺。"""
+    """热榜前 N 的股票代码：依次尝试多个 AKShare 源，全部失败则返回空列表（非致命）。"""
     import akshare as ak
 
+    # 尝试顺序：问财 → 东财（最新版）→ 东财 → 同花顺 → 人气飙升 → 百度热搜
+    candidates = (
+        "stock_hot_rank_wc",
+        "stock_hot_rank_latest_em",
+        "stock_hot_rank_em",
+        "stock_hot_rank_ths",
+        "stock_hot_up_em",
+        "stock_hot_search_baidu",
+    )
     df = None
-    for fname in ("stock_hot_rank_wc", "stock_hot_rank_em", "stock_hot_rank_ths"):
+    tried = []
+    for fname in candidates:
         fn = getattr(ak, fname, None)
         if fn is None:
             continue
+        tried.append(fname)
         try:
             df = fn()
             if df is not None and not df.empty:
-                logger.info("热榜源 %s 命中", fname)
+                logger.info("热榜源 %s 命中 (%d 行)", fname, len(df))
                 break
+            df = None
         except Exception as e:  # noqa: BLE001
-            logger.warning("热榜源 %s 失败: %s", fname, e)
+            logger.debug("热榜源 %s 失败: %s", fname, e)
             df = None
     if df is None or df.empty:
-        logger.warning("所有热榜源均失败")
+        if tried:
+            logger.info("热榜源全部不可用 (尝试过 %s)，跳过热榜补充", ",".join(tried))
         return []
     code_col = None
-    for c in ("股票代码", "代码", "code"):
+    for c in ("股票代码", "代码", "code", "symbol"):
         if c in df.columns:
             code_col = c
             break
