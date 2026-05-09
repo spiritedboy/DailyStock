@@ -39,6 +39,7 @@ SYSTEM_PROMPT = """你是一名常年活跃在 A 股的一线短线游资操盘�
 · allow=true 的铁律：score 必须 ≥ 75 分，且当日绝不能出现“高位放量滞涨”、“严重乖离”或“破位长阴”等致命见顶/破位信号。
 · reason 必须像职业交易员复盘一样，一针见血指出核心看多或否决的逻辑，并至少引用 1~2 个关键数据点（如：“高位爆出 2.5 倍天量但收长上影，资金明显派发”、“紧贴 10 日线缩量企稳，盈亏比极佳”）。
 · 无论数据多寡，必须给出确定性结论。
+· 禁止使用“指标缺失”“数据不足”“无法判断”等推诿表述；若某指标未提供，按现有信息直接决策。
 · 严禁输出任何 markdown 格式（包括 ```json 标识），严禁在 JSON 前后附加任何多余字符，直接输出原始 JSON 字符串。
 """
 
@@ -132,8 +133,19 @@ def _parse(content: str) -> Optional[AiDecision]:
         return None
     score = int(obj.get("score", 0))
     score = max(0, min(100, score))
-    allow = bool(obj.get("allow", False))
-    reason = str(obj.get("reason", ""))[:200]
+    allow_raw = obj.get("allow", False)
+    if isinstance(allow_raw, bool):
+        allow = allow_raw
+    elif isinstance(allow_raw, (int, float)):
+        allow = bool(int(allow_raw))
+    elif isinstance(allow_raw, str):
+        allow = allow_raw.strip().lower() in {"1", "true", "yes", "y", "是"}
+    else:
+        allow = False
+    # 代码层兜底：与系统提示词保持一致，分数不足不允许放行
+    if score < 75:
+        allow = False
+    reason = str(obj.get("reason", ""))[:80]
     return AiDecision(score=score, allow=allow, reason=reason, raw=content, ok=True)
 
 
