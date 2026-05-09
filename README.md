@@ -1,0 +1,106 @@
+# DailyStock
+
+每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股成交额前 100 名（排除 688 与 ST），跑常用策略筛选，调用 DeepSeek 判定是否可买入，按钉钉机器人格式推送“汇总 + 重点”消息，并将结果落地到 SQLite/CSV。
+
+## 功能模块
+- 数据获取：AKShare（`stock_zh_a_spot_em` 实时全市场 + `stock_zh_a_hist` 日线）
+- 策略筛选：5 个默认策略（趋势/量能/涨跌幅/流动性/风险）可单独启停
+- AI 判定：DeepSeek Chat，输出严格 JSON `{score, allow, reason}`
+- 消息推送：钉钉自定义机器人 Webhook，markdown（汇总）+ actionCard（重点单发），text 回退
+- 持久化：SQLite（`runs`/`picks`/`notifications`）+ 每日 CSV 快照
+- 调度：Linux Cron / systemd timer，支持 `--slot midday|close`
+
+## 目录
+```
+src/
+  config.py          # .env 配置加载与校验
+  logging_setup.py   # 日志（控制台 + 滚动文件）
+  models.py          # StockSnapshot/StrategyResult/AiDecision/StockEvaluation
+  data/fetcher.py    # 行情与日线
+  strategy/
+    indicators.py    # MA / 均量
+    rules.py         # 5 个默认策略
+    pipeline.py      # 策略管线
+  ai/deepseek_client.py
+  decision/ranker.py
+  notify/
+    dingtalk.py      # 钉钉发送（含加签）
+    templates.py     # 消息模板
+  storage/repository.py
+  main.py            # 入口
+deploy/cron.daily_stock
+```
+
+## 安装
+```bash
+cd /home/yyf/DailyStock
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# 编辑 .env 填入 DEEPSEEK_API_KEY、DINGTALK_WEBHOOK（可选 DINGTALK_SECRET）
+```
+
+## 手动执行
+```bash
+source .venv/bin/activate
+python -m src.main --slot midday   # 中午 12:00
+python -m src.main --slot close    # 下午 16:00
+```
+
+## 配置定时任务
+```bash
+crontab -e
+# 复制 deploy/cron.daily_stock 中的两行
+# 确认服务器时区：timedatectl | grep "Time zone"
+# 若不是 Asia/Shanghai：sudo timedatectl set-timezone Asia/Shanghai
+```
+
+## 钉钉消息格式（已实现）
+基于官方文档 https://open.dingtalk.com/document/development/robot-message-type
+
+| 用途 | msgtype | 关键字段 |
+| --- | --- | --- |
+| 每日汇总 | `markdown` | `markdown.title`, `markdown.text` |
+| 重点单发 | `actionCard` | `actionCard.title`, `actionCard.text`, `singleTitle`, `singleURL` |
+| 失败回退 | `text` | `text.content` |
+| 多链接（备） | `feedCard` | `feedCard.links[]` |
+
+均支持 `at.atMobiles` / `at.isAtAll`；机器人开启加签时通过 `DINGTALK_SECRET` 自动加签。
+
+## 默认策略（信号制）
+硬过滤：名称含 ST/*ST/退 或价格异常 → 直接淘汰。
+信号策略每命中 1 票，**hits ≥ `MIN_SIGNALS`（默认 2）进入候选池**：
+
+| 策略 | 说明 | 开关 |
+| --- | --- | --- |
+| MA_CROSS | MA5 金叉 MA10，或多头排列 (MA5>MA10>MA20) 且 close>MA20 | `STRAT_MA_ENABLED` |
+| MACD | DIF>DEA 且柱状转正 / 持续多头 | `STRAT_MACD_ENABLED` |
+| RSI | RSI14 在 40-70 健康区，或 <30 超卖反弹且当日上涨 | `STRAT_RSI_ENABLED` |
+| BREAKOUT | 收盘突破近 20 日高点 | `STRAT_BREAKOUT_ENABLED` |
+| PATTERN | 双底形态且未出现头肩顶 | `STRAT_PATTERN_ENABLED` |
+| VOLUME | 当日量 ≥ 5 日均量 × `VOLUME_RATIO_MIN` | `STRAT_VOLUME_ENABLED` |
+| PCT_RANGE | 涨跌幅 ∈ [`PCT_MIN`, `PCT_MAX`] | `STRAT_PCT_ENABLED` |
+| LIQUIDITY | 成交额 ≥ `TURNOVER_FLOOR` 且振幅 ≤ `AMPLITUDE_CAP` | `STRAT_LIQUIDITY_ENABLED` |
+
+所有阈值可在 `.env` 内调整；Top 100 股票逐只过策略，候选池逐只调用 DeepSeek。
+
+## DeepSeek 输入内容
+对每只候选股，提示词会包含：
+- 基本信息：代码、名称、最新价、涨跌幅、成交量/额、振幅
+- 技术指标：MA5/10/20/60、MACD(DIF/DEA/HIST)、RSI14、近 20 日高/低、量比
+- 策略命中：命中信号列表、未命中列表、明细
+
+返回统一为 JSON `{score, allow, reason}`，`allow=true 且 score ≥ FOCUS_SCORE` 认为重点。
+
+## 决策与推送
+- 候选池 = 通过硬过滤 且信号命中数 ≥ `MIN_SIGNALS`
+- 重点 = AI `allow=true` 且 `score ≥ FOCUS_SCORE`（默认 80）
+- 重点单发上限 `TOP_K_FOCUS`（默认 10）
+- 同一 (run_date, run_slot, code) 已发送成功的消息会自动去重
+- 即使候选为空也会发送“空结果汇总”避免静默失败
+
+## 排障
+- 行情为空：交易时段外或 AKShare 限流，可稍后重跑或检查网络
+- DeepSeek 失败：会标记 `ok=false` 不进入重点；查看 `logs/dailystock.log`
+- 钉钉错误码：`310000`(签名错误)、`130101`(频率限制)、`410100`(关键字未命中) 等

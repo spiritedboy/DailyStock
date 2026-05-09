@@ -1,0 +1,6 @@
+# DailyStock cron 示例（北京时间）
+# 编辑：crontab -e
+# 注意：服务器时区需为 Asia/Shanghai，或将分钟/小时按实际时区换算
+# 中午 12:00、下午 16:00 各执行一次
+0 12 * * 1-5 cd /home/yyf/DailyStock && /usr/bin/env -S bash -c '. .venv/bin/activate && python -m src.main --slot midday' >> logs/cron.log 2>&1
+0 16 * * 1-5 cd /home/yyf/DailyStock && /usr/bin/env -S bash -c '. .venv/bin/activate && python -m src.main --slot close'  >> logs/cron.log 2>&1
