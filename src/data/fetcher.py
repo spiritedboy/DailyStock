@@ -154,14 +154,19 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
     if not code_col:
         logger.warning("热榜数据无代码列，columns=%s", list(df.columns))
         return []
+    raw = df[code_col].astype(str).str.strip()
+    # 大小写都处理：SH600000 / sh600000 / 600000.SH 等格式统一为 6 位纯数字
     codes = (
-        df[code_col]
-        .astype(str)
-        .str.strip()
-        .str.replace(r"^(sh|sz|bj)", "", regex=True)
-        .str.zfill(6)
-        .tolist()
+        raw.str.replace(r"^(sh|sz|bj)", "", regex=True, case=False)
+           .str.replace(r"\.(sh|sz|bj)$", "", regex=True, case=False)
+           .str.extract(r"(\d{1,6})", expand=False)
+           .fillna("")
+           .str.zfill(6)
+           .tolist()
     )
+    codes = [c for c in codes if c and c != "000000"]
+    if codes:
+        logger.debug("热榜样本代码: %s", codes[:5])
     return codes[:top_n]
 
 

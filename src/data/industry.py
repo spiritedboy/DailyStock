@@ -19,14 +19,11 @@ def _build_industry_map() -> Dict[str, str]:
 
     out: Dict[str, str] = {}
     boards = None
-    for i in range(3):
-        try:
-            boards = ak.stock_board_industry_name_em()
-            if boards is not None and not boards.empty:
-                break
-        except Exception as e:  # noqa: BLE001
-            logger.warning("拉取行业板块列表失败(第%d次): %s", i + 1, e)
-            time.sleep(min(2 ** i, 4))
+    try:
+        boards = ak.stock_board_industry_name_em()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("拉取行业板块列表失败(跳过行业去集中): %s", e)
+        return out
     if boards is None or boards.empty:
         return out
     name_col = "板块名称" if "板块名称" in boards.columns else boards.columns[0]
@@ -65,9 +62,30 @@ def load_industry_map(cache_path: Path, ttl_days: int = 7) -> Dict[str, str]:
                     return json.load(f)
         except Exception as e:  # noqa: BLE001
             logger.debug("读取行业缓存失败: %s", e)
+    # 失败短缓存：避免上游持续异常时每次运行都重试 N 分钟
+    fail_marker = cache_path.with_suffix(".fail")
+    if fail_marker.exists():
+        try:
+            age = datetime.now() - datetime.fromtimestamp(fail_marker.stat().st_mtime)
+            if age < timedelta(minutes=30):
+                logger.info("行业映射上次构建失败 %ds 内，跳过本次拉取", int(age.total_seconds()))
+                if cache_path.exists():
+                    with cache_path.open("r", encoding="utf-8") as f:
+                        return json.load(f)
+                return {}
+        except Exception:  # noqa: BLE001
+            pass
     data = _build_industry_map()
     if data:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         with cache_path.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
+        if fail_marker.exists():
+            try:
+                fail_marker.unlink()
+            except OSError:
+                pass
+    else:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        fail_marker.touch()
     return data
