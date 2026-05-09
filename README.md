@@ -3,12 +3,12 @@
 每个交易日中午 12:00 与下午 16:00 自动执行：拉取 A 股**成交额前 100 名 ∪ 同花顺热榜前 100 名**，跑常用策略筛选（含**一票否决**），调用 DeepSeek 判定后选出 **AI 评分前 5 ∪ 重点票** 生成 HTML 报告（按月分目录），钉钉只推一条带 URL 的文本消息。HTML 中含上次推送股票的回看、历史表现、策略归因、AI 校准与 60 日 K 线小图。
 
 ## 功能模块
-- **数据获取**：AKShare（实时全市场 + 日线 + 行业板块成分），日线本地 CSV 缓存 + 多线程拉取
+- **数据获取**：AKShare 双源回退（实时行情 东财↔新浪、日线 东财↔新浪），日线本地 CSV 缓存 + 多线程拉取；热榜 6 源依次降级
 - **大盘环境**：上证指数 vs MA20，弱势时仅推送 AI 高分票
 - **策略筛选**：5+ 信号策略 + 2 个一票否决，可单独启停
-- **AI 判定**：DeepSeek Chat，每日缓存（`ai_cache` 表）+ 调用预算（`AI_DAILY_BUDGET`）
+- **AI 判定**：DeepSeek Chat（交易员人格提示词），结果按 `prompt_ver+run_date+code` 缓存（`ai_cache` 表，提示词变更自动失效）+ 调用预算（`AI_DAILY_BUDGET`）+ `--no-ai-cache` 强制重算
 - **推送过滤**：剔除一字板（涨停且开=高=低=收，无法买入）；同一行业最多 N 只
-- **HTML 报告**：按月分目录、ECharts 小 K 线、暗黑模式、`reports/index.html` 总索引
+- **HTML 报告**：手机端卡片式响应式 UI、按月分目录、ECharts 小 K 线、`reports/index.html` 总索引 + 月度索引
 - **跟踪表现**：`pick_returns` 表记录推送票 T+1/3/5/10/20 收益；报告内嵌策略归因 & AI 评分校准
 - **通知**：钉钉只发 URL 文本；钉钉异常自动邮件兜底（SMTP）
 - **可观测**：`logs/metrics.jsonl` 结构化日志（每次运行一行）
@@ -66,6 +66,8 @@ cp .env.example .env
 | `track` | 单独补算历史推送的 T+N 收益 | 只更新 `pick_returns` 表 |
 | `rebuild-index` | 改了 HTML 模板想重刷总索引 | 只重写 `reports/index.html` |
 
+两个 `run` / `dryrun` 都支持 `--no-ai-cache`：忽略 `ai_cache` 表、强制重新调用 DeepSeek（调试新提示词时使用）。
+
 ```bash
 source .venv/bin/activate
 
@@ -75,6 +77,9 @@ python -m src.main run --slot close    # 下午 16:00
 
 # 干跑（不写库、不推送，仅生成报告到本地）
 python -m src.main dryrun --slot close
+
+# 调试提示词：忽略缓存重算 AI
+python -m src.main dryrun --slot close --no-ai-cache
 
 # 仅更新跟踪表（补算 T+N 收益，可定时单独跑）
 python -m src.main track
@@ -98,24 +103,47 @@ source .venv/bin/activate
 pip install -r requirements.txt pytest
 cp .env.example .env
 # 编辑 .env：DEEPSEEK_API_KEY、DINGTALK_WEBHOOK、REPORT_HOST 等
+# 关键项：
+#   SPOT_SOURCE=auto           行情源东财→新浪自动回退（默认）
+#   PUSH_TOP_N=5               推送条数
+#   AI_DAILY_BUDGET=0          DeepSeek 每日调用上限（0=不限）
+#   UNIVERSE_MIN_SIZE=50       样本不足直接中止；周末测试可临时改 0
 
 # 2) 跑单元测试（不联网）
 pytest -q
 
-# 3) 干跑两次（看 reports/{YYYY-MM}/{MM-DD}-{noon|afternoon}.html 是否正常）
-#    注意：周末/盘前 fetch_universe 可能为空 → 会被 UNIVERSE_MIN_SIZE 拦截
-#    临时把 .env 里 UNIVERSE_MIN_SIZE=0 即可干跑出报告
+# 3) 干跑（看 reports/{YYYY-MM}/{MM-DD}-{noon|afternoon}.html 是否正常）
+#    - 周末/盘前 fetch_universe 可能为空 → 临时把 .env 里 UNIVERSE_MIN_SIZE=0
+#    - 调试新提示词时加 --no-ai-cache 强制重新调用 DeepSeek
 python -m src.main dryrun --slot midday
-python -m src.main dryrun --slot close
+python -m src.main dryrun --slot close --no-ai-cache
 
 # 4) 验证钉钉通道（用最小参数避免误推太多）
 #    临时把 .env：PUSH_TOP_N=1、TOP_N_TURNOVER=20、TOP_N_HOT=20
 python -m src.main run --slot close   # 看钉钉是否收到 URL
 
 # 5) 数据预热（首次会拉所有股票日线，比较慢；之后只增量）
-#    dryrun 会把 K 线缓存写到 ./data/klines/*.csv
+#    K 线缓存写到 ./data/klines/*.csv
+#    若日志报"行情源 em 失败"是正常现象，会自动切到新浪
 python -m src.main dryrun --slot close
 ```
+
+#### 部署 Web 服务器（让 HTML 能从外网访问）
+
+```nginx
+# /etc/nginx/sites-available/dailystock
+server {
+  listen 80;
+  server_name your.host;
+
+  location /reports/ {
+    alias /home/yyf/DailyStock/reports/;
+    autoindex on;
+    add_header Cache-Control "no-cache";
+  }
+}
+```
+注意 `.env` 里的 `REPORT_HOST` 必须与 Nginx 暴露的前缀一致（例 `http://your.host/reports`），否则钉钉里的链接会 404。
 
 #### 交易日：装 cron 自动跑
 
@@ -132,6 +160,17 @@ crontab -e
 # 3) 验证时区
 timedatectl | grep "Time zone"        # 必须 Asia/Shanghai
 # 如不对：sudo timedatectl set-timezone Asia/Shanghai
+```
+
+#### 升级到新版本（已有部署）
+
+```bash
+cd /home/DailyStock
+git pull
+# requirements 若有变动：source .venv/bin/activate && pip install -r requirements.txt
+# 数据库自动迁移（启动时会给 ai_cache 补 prompt_ver 列），无需手动 ALTER TABLE
+# 想立刻看新提示词的效果：
+python -m src.main dryrun --slot midday --no-ai-cache
 ```
 
 ### 日常维护
@@ -170,9 +209,12 @@ crontab -e
 均支持 `at.atMobiles` / `at.isAtAll`；机器人开启加签时通过 `DINGTALK_SECRET` 自动加签。
 
 ## 选股范围
-- **成交额 Top N**（`TOP_N_TURNOVER`，默认 100）∪ **同花顺热榜 Top N**（`TOP_N_HOT`，默认 100）
-- 按代码去重后，**逐只**过策略。钉钉表格中会展示来源（`turnover` / `ths_hot`）
-- 数据源：AKShare `stock_zh_a_spot_em` + `stock_hot_rank_wc`（问财/同花顺热榜）
+- **成交额 Top N**（`TOP_N_TURNOVER`，默认 100）∪ **热榜 Top N**（`TOP_N_HOT`，默认 100）
+- 按代码去重后，**逐只**过策略。钉钉/HTML 中会展示来源（`turnover` / `ths_hot`）
+- 实时行情：`SPOT_SOURCE=auto` 时按 `stock_zh_a_spot_em`（东财）→ `stock_zh_a_spot`（新浪）顺序回退，每个源 3 次重试；可强制 `em` / `sina`
+- 日线：`stock_zh_a_hist`（东财）→ `stock_zh_a_daily`（新浪，自动加 sh/sz/bj 前缀）双源回退
+- 热榜：依次 `stock_hot_rank_em` → `_ths` → `_wc` → `stock_hot_up_em` → `stock_hot_search_baidu` → `stock_hot_rank_latest_em`，**自动跳过没有代码列的源**；全部失败仅 INFO 不报错
+- 行业映射：`stock_board_industry_name_em` 单次拉取（不重试），失败写入 30 分钟失败标记避免反复重连
 
 ## 默认策略（按优先级：硬过滤 → 一票否决 → 信号）
 
@@ -237,14 +279,20 @@ http://your.host/reports/2026-05/05-09-afternoon.html
 [`DingTalkClient`](src/notify/dingtalk.py) 仍提供 `text / markdown / actionCard / link / feedCard`及加签能力，需要时可复用。
 
 ## DeepSeek 输入内容
-对每只候选股，提示词会包含：
+对每只候选股，提示词会包含（**仅传入已计算出有效数值的指标**，缺失项不会出现，避免诱导 AI 输出"指标缺失"）：
 - 基本信息：代码、名称、**来源**(turnover/ths_hot)、最新价、涨跌幅、成交量/额、振幅、开/高/低/收
 - 技术指标：MA5/10/20/60、**BIAS10/20**、**20日累计涨幅**、MACD(DIF/DEA/HIST)、RSI14、近 20 日高/低、**52周高点**、量比
 - 策略命中：命中信号列表、未命中列表、明细
 
-返回统一为 JSON `{score, allow, reason}`。
+系统提示词为**经验交易员人格**（趋势位置/量价关系/动能与拐点/风险面/性价比 5 维度评分，硬性禁止"指标缺失/数据不足/无法判断"等推诿表述）。返回统一为 JSON `{score, allow, reason}`。
+
+**缓存**：结果按 `(run_date, code, prompt_ver)` 缓存到 SQLite `ai_cache` 表，`prompt_ver = md5(SYSTEM_PROMPT)[:10]`。**提示词改动后旧缓存自动失效**，无需手动清理。临时调试可加 `--no-ai-cache`。
 
 ## 排障
-- 行情为空：交易时段外或 AKShare 限流，可稍后重跑或检查网络
+- 行情为空：交易时段外或 AKShare 限流；`SPOT_SOURCE=auto` 时会自动回退到新浪，仍空则可稍后重跑或检查网络
+- 日线 `RemoteDisconnected`：东财长连接不稳；fetcher 会自动切到新浪重试，无需手动干预
+- 热榜日志 `热榜源 ... 命中但无代码列`：正常，自动跳过到下一源
+- 行业映射卡住：30 分钟内只重试一次（`industry_map.fail` 标记），如要强制刷新删除 `data/industry_map.fail` 即可
+- AI 报告反复出现旧理由：`prompt_ver` 已会自动让旧缓存失效；如有意外可 `--no-ai-cache` 重跑或 `sqlite3 data/dailystock.db "DELETE FROM ai_cache WHERE run_date='YYYY-MM-DD';"`
 - DeepSeek 失败：会标记 `ok=false` 不进入重点；查看 `logs/dailystock.log`
 - 钉钉错误码：`310000`(签名错误)、`130101`(频率限制)、`410100`(关键字未命中) 等
