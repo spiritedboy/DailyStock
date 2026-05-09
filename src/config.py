@@ -89,7 +89,7 @@ class Settings:
     # 选股范围
     top_n_turnover: int = 100
     top_n_hot: int = 100
-    exclude_prefixes: List[str] = field(default_factory=lambda: ["688"])
+    exclude_prefixes: List[str] = field(default_factory=lambda: ["688", "920", "83", "87", "88"])
     exclude_name_keywords: List[str] = field(
         default_factory=lambda: ["ST", "*ST", "退"]
     )
@@ -170,7 +170,7 @@ def load_settings() -> Settings:
         dingtalk_at_all=_get_bool("DINGTALK_AT_ALL", False),
         top_n_turnover=_get_int("TOP_N_TURNOVER", _get_int("TOP_N", 100)),
         top_n_hot=_get_int("TOP_N_HOT", 100),
-        exclude_prefixes=_get_list("EXCLUDE_PREFIXES", "688"),
+        exclude_prefixes=_get_list("EXCLUDE_PREFIXES", "688,920,83,87,88"),
         exclude_name_keywords=_get_list("EXCLUDE_NAME_KEYWORDS", "ST,*ST,退"),
         strategy=StrategyConfig(
             risk_enabled=_get_bool("STRAT_RISK_ENABLED", True),

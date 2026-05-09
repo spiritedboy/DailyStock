@@ -382,7 +382,11 @@ def _fetch_klines_by_range(code: str, start_date: str, end_date: Optional[str], 
                 wait = min(2 ** i, 4)
                 logger.debug("K线 %s 源 %s 第%d次失败: %s", code, source_name, i + 1, e)
                 time.sleep(wait)
-    logger.warning("获取K线失败 %s: %s", code, last_err)
+    # 北交所 920xxx / 83/87/88xxxx 等多数源不支持，给一行更清晰的提示
+    if str(code).startswith(("920", "83", "87", "88")):
+        logger.info("跳过北交所代码 %s（akshare 多数源不支持，建议在 EXCLUDE_PREFIXES 排除）", code)
+    else:
+        logger.warning("获取K线失败 %s: %s", code, last_err)
     return pd.DataFrame()
 
 
