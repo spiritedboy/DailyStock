@@ -127,15 +127,24 @@ def _load_spot() -> pd.DataFrame:
 
 
 def _fetch_ths_hot_codes(top_n: int) -> List[str]:
-    """同花顺/问财热榜前 N 的股票代码。"""
+    """热榜前 N 的股票代码：依次尝试问财→东财→同花顺。"""
     import akshare as ak
 
-    try:
-        df = ak.stock_hot_rank_wc()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("拉取同花顺热榜失败: %s", e)
-        return []
+    df = None
+    for fname in ("stock_hot_rank_wc", "stock_hot_rank_em", "stock_hot_rank_ths"):
+        fn = getattr(ak, fname, None)
+        if fn is None:
+            continue
+        try:
+            df = fn()
+            if df is not None and not df.empty:
+                logger.info("热榜源 %s 命中", fname)
+                break
+        except Exception as e:  # noqa: BLE001
+            logger.warning("热榜源 %s 失败: %s", fname, e)
+            df = None
     if df is None or df.empty:
+        logger.warning("所有热榜源均失败")
         return []
     code_col = None
     for c in ("股票代码", "代码", "code"):
@@ -145,7 +154,14 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
     if not code_col:
         logger.warning("热榜数据无代码列，columns=%s", list(df.columns))
         return []
-    codes = df[code_col].astype(str).str.strip().str.zfill(6).tolist()
+    codes = (
+        df[code_col]
+        .astype(str)
+        .str.strip()
+        .str.replace(r"^(sh|sz|bj)", "", regex=True)
+        .str.zfill(6)
+        .tolist()
+    )
     return codes[:top_n]
 
 
@@ -240,18 +256,12 @@ def fetch_recent_klines(code: str, days: int = 250) -> pd.DataFrame:
     return _fetch_klines_by_range(code, start, end, days)
 
 
-def _fetch_klines_by_range(code: str, start_date: str, end_date: Optional[str], days: int) -> pd.DataFrame:
+def _kline_em(code: str, start_date: str, end_date: str) -> pd.DataFrame:
     import akshare as ak
 
-    if not end_date:
-        end_date = datetime.now().strftime("%Y%m%d")
-    try:
-        df = ak.stock_zh_a_hist(
-            symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq"
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("获取K线失败 %s: %s", code, e)
-        return pd.DataFrame()
+    df = ak.stock_zh_a_hist(
+        symbol=code, period="daily", start_date=start_date, end_date=end_date, adjust="qfq"
+    )
     if df is None or df.empty:
         return pd.DataFrame()
     rename = {
@@ -265,11 +275,56 @@ def _fetch_klines_by_range(code: str, start_date: str, end_date: Optional[str], 
         "振幅": "amplitude",
         "涨跌幅": "pct_change",
     }
-    df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+    return df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+
+
+def _kline_sina(code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """新浪日线作为东财失败时的回退。symbol 需要带 sh/sz/bj 前缀。"""
+    import akshare as ak
+
+    c = str(code).zfill(6)
+    if c.startswith(("60", "68", "9")):
+        sym = "sh" + c
+    elif c.startswith(("4", "8")):
+        sym = "bj" + c
+    else:
+        sym = "sz" + c
+    df = ak.stock_zh_a_daily(symbol=sym, start_date=start_date, end_date=end_date, adjust="qfq")
+    if df is None or df.empty:
+        return pd.DataFrame()
     if "date" in df.columns:
+        df = df.copy()
         df["date"] = df["date"].astype(str)
-    df = df.tail(days).reset_index(drop=True)
+    # 新浪没有 amplitude / pct_change，补一下
+    if "close" in df.columns and "pct_change" not in df.columns:
+        df["pct_change"] = df["close"].pct_change() * 100
+    if {"high", "low", "close"}.issubset(df.columns) and "amplitude" not in df.columns:
+        prev_close = df["close"].shift(1)
+        df["amplitude"] = (df["high"] - df["low"]) / prev_close * 100
     return df
+
+
+def _fetch_klines_by_range(code: str, start_date: str, end_date: Optional[str], days: int) -> pd.DataFrame:
+    if not end_date:
+        end_date = datetime.now().strftime("%Y%m%d")
+
+    last_err: Optional[Exception] = None
+    for source_name, fn in (("em", _kline_em), ("sina", _kline_sina)):
+        for i in range(3):
+            try:
+                df = fn(code, start_date, end_date)
+                if df is not None and not df.empty:
+                    if "date" in df.columns:
+                        df["date"] = df["date"].astype(str)
+                    return df.tail(days).reset_index(drop=True)
+                break  # 空数据不重试，直接换源
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                wait = min(2 ** i, 4)
+                logger.debug("K线 %s 源 %s 第%d次失败: %s", code, source_name, i + 1, e)
+                time.sleep(wait)
+    logger.warning("获取K线失败 %s: %s", code, last_err)
+    return pd.DataFrame()
 
 
 # ---------- 并发批量拉取 ----------

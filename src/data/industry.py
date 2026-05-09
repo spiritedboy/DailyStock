@@ -18,11 +18,15 @@ def _build_industry_map() -> Dict[str, str]:
     import akshare as ak
 
     out: Dict[str, str] = {}
-    try:
-        boards = ak.stock_board_industry_name_em()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("拉取行业板块列表失败: %s", e)
-        return out
+    boards = None
+    for i in range(3):
+        try:
+            boards = ak.stock_board_industry_name_em()
+            if boards is not None and not boards.empty:
+                break
+        except Exception as e:  # noqa: BLE001
+            logger.warning("拉取行业板块列表失败(第%d次): %s", i + 1, e)
+            time.sleep(min(2 ** i, 4))
     if boards is None or boards.empty:
         return out
     name_col = "板块名称" if "板块名称" in boards.columns else boards.columns[0]
