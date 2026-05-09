@@ -181,12 +181,12 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
         return []
     raw = df[code_col].astype(str).str.strip()
     # 大小写都处理：SH600000 / sh600000 / 600000.SH 等格式统一为 6 位纯数字
+    # 用 \d{6} 精确匹配 6 位数字，避免合并列里抽到非代码的短数字
     codes = (
         raw.str.replace(r"^(sh|sz|bj)", "", regex=True, case=False)
            .str.replace(r"\.(sh|sz|bj)$", "", regex=True, case=False)
-           .str.extract(r"(\d{1,6})", expand=False)
+           .str.extract(r"(\d{6})", expand=False)
            .fillna("")
-           .str.zfill(6)
            .tolist()
     )
     codes = [c for c in codes if c and c != "000000"]
@@ -226,13 +226,23 @@ def fetch_universe(
     # 过滤排除
     spot_idx: Dict[str, pd.Series] = {row["code"]: row for _, row in spot.iterrows()}
     hot_codes_filtered: List[str] = []
+    miss_not_in_spot: List[str] = []
+    miss_excluded: List[str] = []
     for c in hot_codes:
         row = spot_idx.get(c)
         if row is None:
+            miss_not_in_spot.append(c)
             continue  # 行情中无此票（可能停牌或非A股）
         if _is_excluded(row["code"], row["name"], exclude_prefixes, exclude_name_keywords):
+            miss_excluded.append(c)
             continue
         hot_codes_filtered.append(c)
+    if hot_codes and not hot_codes_filtered:
+        logger.warning(
+            "热榜 %d 个代码全部被过滤掉：行情中找不到=%d (%s)，被排除规则剔除=%d (%s)",
+            len(hot_codes), len(miss_not_in_spot), miss_not_in_spot[:5],
+            len(miss_excluded), miss_excluded[:5],
+        )
 
     logger.info(
         "成交额TopN=%d 命中=%d；热榜TopN=%d 过滤后=%d",
