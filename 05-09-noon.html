@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DailyStock 报告 - 2026-05-09 中午 12:00</title>
+<style>
+:root { color-scheme: light dark; --bg:#fff; --fg:#222; --muted:#666; --line:#e0e0e0;
+  --row-alt:#fafbfc; --th:#f5f7fa; --link:#1a73e8; --pos:#d93025; --neg:#188038;
+  --tag-tov-bg:#e8f0fe; --tag-tov-fg:#1a73e8;
+  --tag-hot-bg:#fce8e6; --tag-hot-fg:#d93025;
+  --tag-focus-bg:#fef7e0; --tag-focus-fg:#b06000;
+  --tag-allow-bg:#e6f4ea; --tag-allow-fg:#137333;
+  --tag-deny-bg:#fce8e6; --tag-deny-fg:#c5221f;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#1a1b1e; --fg:#e3e3e3; --muted:#9aa0a6; --line:#2c2d30;
+    --row-alt:#202125; --th:#26272b; --link:#8ab4f8; --pos:#ff6b6b; --neg:#52d18a;
+    --tag-tov-bg:#1f2a40; --tag-tov-fg:#8ab4f8;
+    --tag-hot-bg:#3b1d1c; --tag-hot-fg:#ff6b6b;
+    --tag-focus-bg:#3a2e10; --tag-focus-fg:#ffd278;
+    --tag-allow-bg:#1a3322; --tag-allow-fg:#52d18a;
+    --tag-deny-bg:#3a1d1d; --tag-deny-fg:#ff8a80;
+  }
+}
+* { box-sizing: border-box; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  margin: 24px auto; max-width: 1180px; padding: 0 16px; line-height: 1.55;
+  background: var(--bg); color: var(--fg); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 15px; margin: 16px 0 8px; }
+.meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.stat { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0 16px; font-size: 13px; }
+.stat span b { color: var(--link); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px; }
+th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: var(--th); font-weight: 600; }
+tr:nth-child(even) td { background: var(--row-alt); }
+.pos { color: var(--pos); font-weight: 600; }
+.neg { color: var(--neg); font-weight: 600; }
+.tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px; }
+.tag-tov { background: var(--tag-tov-bg); color: var(--tag-tov-fg); }
+.tag-hot { background: var(--tag-hot-bg); color: var(--tag-hot-fg); }
+.tag-focus { background: var(--tag-focus-bg); color: var(--tag-focus-fg); }
+.tag-allow { background: var(--tag-allow-bg); color: var(--tag-allow-fg); }
+.tag-deny { background: var(--tag-deny-bg); color: var(--tag-deny-fg); }
+details { margin: 4px 0; }
+summary { cursor: pointer; color: var(--link); font-size: 12px; }
+.reason { color: var(--fg); font-size: 12px; white-space: pre-wrap; }
+.reason.muted { color: var(--muted); }
+.empty { color: var(--muted); font-style: italic; }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; border-top: 1px solid var(--line); padding-top: 8px; }
+.kline-cell { width: 220px; height: 100px; }
+@media (max-width: 720px) { .kline-cell { width: 160px; height: 80px; } }
+</style>
+</head>
+<body>
+  <h1>DailyStock 报告 - 2026-05-09 中午 12:00</h1>
+  <div class="meta">生成时间 2026-05-09 22:38:04 · <a href="../index.html">月度索引</a> · <a href="../../index.html">全部报告</a></div>
+  <div class="stat"><span>候选池(成交额∪热榜): <b>100</b></span><span>一票否决: <b>0</b></span><span>信号≥2: <b>69</b></span><span>AI 调用: <b>69</b></span><span>AI 允许: <b>3</b></span><span>本次推送: <b>5</b></span></div>
+
+  <h2>本次推送（AI 评分前 5 ∪ 重点票）</h2>
+  
+<table>
+  <thead>
+    <tr><th>代码/名称</th><th>最新价/涨跌幅</th><th>成交额</th><th>AI 评分</th><th>策略</th><th>AI 理由 / 指标</th></tr>
+  </thead>
+  <tbody>
+<tr>
+  <td>601208<br>东材科技<br><span class="tag tag-tov">成交额</span></td>
+  <td>46.10<br><span class="pos">+2.08%</span></td>
+  <td>54.21 亿<br>振幅 6.02%</td>
+  <td>72 / 100<br><span class="tag tag-allow">允许</span></td>
+  <td>2 票<br>PCT_RANGE, LIQUIDITY</td>
+  <td><div class="reason">成交额54亿放量振幅6%，短线活跃度高，涨跌幅合理，无见顶信号，适当关注。</div>
+      <div class="reason" style="color:#888;margin-top:4px;">MA5/10/20 -/-/- · BIAS10/20 -%/-% · RSI14 - · MACD - · 量比 -</div>
+      <details><summary>查看策略命中详情</summary><div class='reason'><b>命中信号</b>: PCT_RANGE, LIQUIDITY<br><b>未命中</b>:<br>[MA_CROSS] K线不足<br>[MACD] MACD缺失<br>[RSI] RSI缺失<br>[BREAKOUT] 突破无数据<br>[PATTERN] 无K线<br>[VOLUME] 量比缺失</div></details>
+  </td>
+</tr>
+
+<tr>
+  <td>600879<br>航天电子<br><span class="tag tag-tov">成交额</span></td>
+  <td>26.65<br><span class="pos">+5.29%</span></td>
+  <td>80.13 亿<br>振幅 8.26%</td>
+  <td>70 / 100<br><span class="tag tag-allow">允许</span></td>
+  <td>2 票<br>PCT_RANGE, LIQUIDITY</td>
+  <td><div class="reason">成交额80亿流动性充裕，涨跌幅5.29%在合理范围，振幅8.26%反映活跃度，短期强势，未现见顶信号。</div>
+      <div class="reason" style="color:#888;margin-top:4px;">MA5/10/20 -/-/- · BIAS10/20 -%/-% · RSI14 - · MACD - · 量比 -</div>
+      <details><summary>查看策略命中详情</summary><div class='reason'><b>命中信号</b>: PCT_RANGE, LIQUIDITY<br><b>未命中</b>:<br>[MA_CROSS] K线不足<br>[MACD] MACD缺失<br>[RSI] RSI缺失<br>[BREAKOUT] 突破无数据<br>[PATTERN] 无K线<br>[VOLUME] 量比缺失</div></details>
+  </td>
+</tr>
+
+<tr>
+  <td>000426<br>兴业银锡<br><span class="tag tag-tov">成交额</span></td>
+  <td>49.75<br><span class="pos">+3.34%</span></td>
+  <td>55.34 亿<br>振幅 7.04%</td>
+  <td>70 / 100<br><span class="tag tag-allow">允许</span></td>
+  <td>2 票<br>PCT_RANGE, LIQUIDITY</td>
+  <td><div class="reason">放量上涨，成交额55亿流动性充裕，振幅7%显示活跃度，无见顶信号，短线可适当关注</div>
+      <div class="reason" style="color:#888;margin-top:4px;">MA5/10/20 -/-/- · BIAS10/20 -%/-% · RSI14 - · MACD - · 量比 -</div>
+      <details><summary>查看策略命中详情</summary><div class='reason'><b>命中信号</b>: PCT_RANGE, LIQUIDITY<br><b>未命中</b>:<br>[MA_CROSS] K线不足<br>[MACD] MACD缺失<br>[RSI] RSI缺失<br>[BREAKOUT] 突破无数据<br>[PATTERN] 无K线<br>[VOLUME] 量比缺失</div></details>
+  </td>
+</tr>
+
+<tr>
+  <td>301308<br>江波龙<br><span class="tag tag-tov">成交额</span></td>
+  <td>479.99<br><span class="neg">-0.69%</span></td>
+  <td>91.92 亿<br>振幅 2.55%</td>
+  <td>65 / 100<br><span class="tag tag-deny">不建议</span></td>
+  <td>2 票<br>PCT_RANGE, LIQUIDITY</td>
+  <td><div class="reason">技术指标缺失，短期方向不明，虽流动性好但无明确买入信号，建议观望。</div>
+      <div class="reason" style="color:#888;margin-top:4px;">MA5/10/20 -/-/- · BIAS10/20 -%/-% · RSI14 - · MACD - · 量比 -</div>
+      <details><summary>查看策略命中详情</summary><div class='reason'><b>命中信号</b>: PCT_RANGE, LIQUIDITY<br><b>未命中</b>:<br>[MA_CROSS] K线不足<br>[MACD] MACD缺失<br>[RSI] RSI缺失<br>[BREAKOUT] 突破无数据<br>[PATTERN] 无K线<br>[VOLUME] 量比缺失</div></details>
+  </td>
+</tr>
+
+<tr>
+  <td>300620<br>光库科技<br><span class="tag tag-tov">成交额</span></td>
+  <td>259.10<br><span class="neg">-0.27%</span></td>
+  <td>43.01 亿<br>振幅 6.53%</td>
+  <td>65 / 100<br><span class="tag tag-deny">不建议</span></td>
+  <td>2 票<br>PCT_RANGE, LIQUIDITY</td>
+  <td><div class="reason">技术指标严重缺失，无法判断趋势，虽流动性充足且振幅合理，但缺乏有效买入信号，谨慎观望。</div>
+      <div class="reason" style="color:#888;margin-top:4px;">MA5/10/20 -/-/- · BIAS10/20 -%/-% · RSI14 - · MACD - · 量比 -</div>
+      <details><summary>查看策略命中详情</summary><div class='reason'><b>命中信号</b>: PCT_RANGE, LIQUIDITY<br><b>未命中</b>:<br>[MA_CROSS] K线不足<br>[MACD] MACD缺失<br>[RSI] RSI缺失<br>[BREAKOUT] 突破无数据<br>[PATTERN] 无K线<br>[VOLUME] 量比缺失</div></details>
+  </td>
+</tr>
+</tbody>
+</table>
+
+
+  
+
+  <h2>上次推送回看</h2>
+  <p class="empty">无历史推送可对比（首次运行或上次未触发推送）。</p>
+
+  
+  
+  
+
+  <footer>
+    数据来源：东方财富 / 同花顺；AI 判定：DeepSeek。仅供研究，不构成投资建议。
+  </footer>
+</body>
+</html>

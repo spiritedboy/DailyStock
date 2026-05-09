@@ -165,12 +165,21 @@ def _render_pushed_table(pushed: List[StockEvaluation]) -> str:
             + "<br>".join(details_lines) + "</div></details>"
         ) if details_lines else ""
 
-        ind_line = (
-            f"MA5/10/20 {_fmt(ind.ma5)}/{_fmt(ind.ma10)}/{_fmt(ind.ma20)} · "
-            f"BIAS10/20 {_fmt(ind.bias10)}%/{_fmt(ind.bias20)}% · "
-            f"RSI14 {_fmt(ind.rsi14, 1)} · MACD {_fmt(ind.macd_hist, 3)} · "
-            f"量比 {_fmt(ind.volume_ratio)}"
+        has_ind = any(
+            v is not None
+            for v in (ind.ma5, ind.ma10, ind.ma20, ind.bias10, ind.bias20,
+                      ind.rsi14, ind.macd_hist, ind.volume_ratio)
         )
+        if has_ind:
+            ind_line = (
+                f"MA5/10/20 {_fmt(ind.ma5)}/{_fmt(ind.ma10)}/{_fmt(ind.ma20)} · "
+                f"BIAS10/20 {_fmt(ind.bias10)}%/{_fmt(ind.bias20)}% · "
+                f"RSI14 {_fmt(ind.rsi14, 1)} · MACD {_fmt(ind.macd_hist, 3)} · "
+                f"量比 {_fmt(ind.volume_ratio)}"
+            )
+            ind_html = f'<div class="reason" style="color:#888;margin-top:4px;">{_esc(ind_line)}</div>'
+        else:
+            ind_html = '<div class="reason" style="color:#888;margin-top:4px;">指标缺失（K 线未拉到）</div>'
 
         rows.append(f"""
 <tr>
@@ -180,7 +189,7 @@ def _render_pushed_table(pushed: List[StockEvaluation]) -> str:
   <td>{score} / 100<br>{allow_html}</td>
   <td>{st.hits} 票<br>{_esc(", ".join(st.signals)) or "-"}</td>
   <td><div class="reason">{_esc(reason) or "-"}</div>
-      <div class="reason" style="color:#888;margin-top:4px;">{_esc(ind_line)}</div>
+      {ind_html}
       {details_html}
   </td>
 </tr>
@@ -390,7 +399,7 @@ def render_html(
 </head>
 <body>
   <h1>{_esc(title)}</h1>
-  <div class="meta">生成时间 {gen_at} · <a href="../index.html">月度索引</a> · <a href="../../index.html">全部报告</a></div>
+  <div class="meta">生成时间 {gen_at} · <a href="index.html">月度索引</a> · <a href="../index.html">全部报告</a></div>
   <div class="stat">{stat_line}</div>
 
   <h2>本次推送（AI 评分前 {stats.get('push_top_n', 5)} ∪ 重点票）</h2>
