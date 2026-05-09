@@ -27,6 +27,16 @@ _SPOT_RENAME = {
     "最低": "low",
     "今开": "open",
     "昨收": "pre_close",
+    # 新浪/腾讯字段别名
+    "trade": "price",
+    "changepercent": "pct_change",
+    "volume": "volume",
+    "amount": "turnover",
+    "high": "high",
+    "low": "low",
+    "open": "open",
+    "settlement": "pre_close",
+    "symbol": "code",
 }
 
 
@@ -42,34 +52,78 @@ def _is_excluded(code: str, name: str, exclude_prefixes: List[str], exclude_name
     return False
 
 
-def _load_spot() -> pd.DataFrame:
-    """拉一次全市场实时行情并标准化列。带重试。"""
-    import akshare as ak
-
-    df: Optional[pd.DataFrame] = None
-    last_err: Optional[Exception] = None
-    for i in range(4):
-        try:
-            df = ak.stock_zh_a_spot_em()
-            if df is not None and not df.empty:
-                break
-        except Exception as e:  # noqa: BLE001
-            last_err = e
-            wait = min(2 ** i, 10)
-            logger.warning("拉取实时行情失败(第%d次)，%ss 后重试: %s", i + 1, wait, e)
-            time.sleep(wait)
+def _normalize_spot(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
-        if last_err is not None:
-            raise last_err
         return pd.DataFrame()
     cols = {k: v for k, v in _SPOT_RENAME.items() if k in df.columns}
     df = df.rename(columns=cols)
+    if "code" not in df.columns:
+        return pd.DataFrame()
     for c in ("price", "pct_change", "volume", "turnover", "amplitude", "high", "low", "open", "pre_close"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     df["code"] = df["code"].astype(str).str.strip()
-    df["name"] = df["name"].astype(str).str.strip()
+    # 去掉 sh/sz/bj 前缀
+    df["code"] = df["code"].str.replace(r"^(sh|sz|bj)", "", regex=True).str.zfill(6)
+    if "name" in df.columns:
+        df["name"] = df["name"].astype(str).str.strip()
+    else:
+        df["name"] = df["code"]
+    if "amplitude" not in df.columns and {"high", "low", "pre_close"}.issubset(df.columns):
+        df["amplitude"] = (df["high"] - df["low"]) / df["pre_close"] * 100
     return df
+
+
+def _spot_em() -> pd.DataFrame:
+    import akshare as ak
+
+    df = ak.stock_zh_a_spot_em()
+    return _normalize_spot(df)
+
+
+def _spot_sina() -> pd.DataFrame:
+    import akshare as ak
+
+    df = ak.stock_zh_a_spot()  # 新浪
+    return _normalize_spot(df)
+
+
+_SPOT_SOURCES = [
+    ("em", _spot_em),
+    ("sina", _spot_sina),
+]
+
+
+def _load_spot() -> pd.DataFrame:
+    """拉一次全市场实时行情：东财→新浪 双源回退 + 重试。"""
+    import os
+
+    pref = os.getenv("SPOT_SOURCE", "auto").strip().lower()
+    sources = _SPOT_SOURCES
+    if pref == "em":
+        sources = [_SPOT_SOURCES[0]]
+    elif pref == "sina":
+        sources = [_SPOT_SOURCES[1], _SPOT_SOURCES[0]]
+
+    last_err: Optional[Exception] = None
+    for name, fn in sources:
+        for i in range(3):
+            try:
+                df = fn()
+                if df is not None and not df.empty:
+                    logger.info("行情源 %s 成功 (尝试 %d 次)", name, i + 1)
+                    return df
+                logger.warning("行情源 %s 返回空，第 %d 次", name, i + 1)
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                wait = min(2 ** i, 8)
+                logger.warning("行情源 %s 失败(第%d次): %s，%ss 后重试", name, i + 1, e, wait)
+                time.sleep(wait)
+        logger.warning("行情源 %s 三次均失败，尝试下一个源", name)
+
+    if last_err is not None:
+        raise last_err
+    return pd.DataFrame()
 
 
 def _fetch_ths_hot_codes(top_n: int) -> List[str]:
