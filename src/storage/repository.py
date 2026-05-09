@@ -79,9 +79,10 @@ SCHEMA = [
     CREATE TABLE IF NOT EXISTS ai_cache (
         run_date TEXT NOT NULL,
         code TEXT NOT NULL,
+        prompt_ver TEXT NOT NULL DEFAULT '',
         score INTEGER, allow INTEGER, reason TEXT, raw TEXT,
         created_at TEXT,
-        PRIMARY KEY (run_date, code)
+        PRIMARY KEY (run_date, code, prompt_ver)
     )
     """,
     """
@@ -103,6 +104,13 @@ class Repository:
         with self._conn() as c:
             for s in SCHEMA:
                 c.execute(s)
+            # 兼容旧库：补 ai_cache.prompt_ver 列
+            try:
+                cols = [r[1] for r in c.execute("PRAGMA table_info(ai_cache)").fetchall()]
+                if "prompt_ver" not in cols:
+                    c.execute("ALTER TABLE ai_cache ADD COLUMN prompt_ver TEXT NOT NULL DEFAULT ''")
+            except sqlite3.Error:
+                pass
 
     @contextmanager
     def _conn(self):
@@ -277,24 +285,24 @@ class Repository:
         return path
 
     # ---------- AI 缓存与配额 ----------
-    def get_ai_cached(self, run_date: str, code: str):
+    def get_ai_cached(self, run_date: str, code: str, prompt_ver: str = ""):
         with self._conn() as c:
             row = c.execute(
-                "SELECT score, allow, reason, raw FROM ai_cache WHERE run_date=? AND code=?",
-                (run_date, code),
+                "SELECT score, allow, reason, raw FROM ai_cache WHERE run_date=? AND code=? AND prompt_ver=?",
+                (run_date, code, prompt_ver),
             ).fetchone()
             if not row:
                 return None
             return {"score": row[0], "allow": bool(row[1]), "reason": row[2], "raw": row[3]}
 
-    def save_ai_cached(self, run_date: str, code: str, score: int, allow: bool, reason: str, raw: str):
+    def save_ai_cached(self, run_date: str, code: str, score: int, allow: bool, reason: str, raw: str, prompt_ver: str = ""):
         now = datetime.now().isoformat(timespec="seconds")
         with self._conn() as c:
             c.execute(
                 """INSERT OR REPLACE INTO ai_cache
-                   (run_date, code, score, allow, reason, raw, created_at)
-                   VALUES (?,?,?,?,?,?,?)""",
-                (run_date, code, int(score), 1 if allow else 0, reason, raw, now),
+                   (run_date, code, prompt_ver, score, allow, reason, raw, created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (run_date, code, prompt_ver, int(score), 1 if allow else 0, reason, raw, now),
             )
 
     def get_ai_usage(self, run_date: str) -> int:

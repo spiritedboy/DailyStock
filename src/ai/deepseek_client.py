@@ -1,6 +1,7 @@
 """DeepSeek 客户端：输入完整基本信息+技术指标+命中信号，输出 score(0-100) 与 allow。"""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -142,7 +143,7 @@ def _parse(content: str) -> Optional[AiDecision]:
 
 class DeepSeekClient:
     def __init__(self, api_key: str, base_url: str, model: str, timeout: int = 30, max_retry: int = 3,
-                 repo=None, daily_budget: int = 0):
+                 repo=None, daily_budget: int = 0, use_cache: bool = True):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -150,11 +151,14 @@ class DeepSeekClient:
         self.max_retry = max_retry
         self.repo = repo
         self.daily_budget = int(daily_budget or 0)
+        self.use_cache = use_cache
+        # 提示词版本号：SYSTEM_PROMPT 变化即缓存自动失效
+        self.prompt_ver = hashlib.md5(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:10]
 
     def evaluate(self, ev: StockEvaluation, run_date: str = "") -> AiDecision:
-        # 1) 缓存命中
-        if self.repo and run_date:
-            cached = self.repo.get_ai_cached(run_date, ev.snapshot.code)
+        # 1) 缓存命中（按提示词版本隔离）
+        if self.use_cache and self.repo and run_date:
+            cached = self.repo.get_ai_cached(run_date, ev.snapshot.code, self.prompt_ver)
             if cached:
                 return AiDecision(
                     score=int(cached["score"]), allow=bool(cached["allow"]),
@@ -180,6 +184,7 @@ class DeepSeekClient:
             self.repo.save_ai_cached(
                 run_date, ev.snapshot.code,
                 parsed.score, parsed.allow, parsed.reason, parsed.raw,
+                self.prompt_ver,
             )
         return parsed
 

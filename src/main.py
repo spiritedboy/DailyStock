@@ -80,7 +80,7 @@ def _send_email_fallback(settings: Settings, subject: str, body: str) -> bool:
     return ok
 
 
-def run(slot: str, dryrun: bool = False) -> int:
+def run(slot: str, dryrun: bool = False, no_ai_cache: bool = False) -> int:
     settings = load_settings()
     setup_logging(settings.log_level, settings.log_dir)
 
@@ -101,10 +101,10 @@ def run(slot: str, dryrun: bool = False) -> int:
 
     repo = Repository(settings.sqlite_path, settings.data_dir)
     run_id = repo.new_run_id()
-    logger.info("开始任务 run_id=%s slot=%s date=%s dryrun=%s", run_id, slot, run_date, dryrun)
+    logger.info("开始任务 run_id=%s slot=%s date=%s dryrun=%s ai_cache=%s", run_id, slot, run_date, dryrun, not no_ai_cache)
 
     try:
-        return _run_inner(settings, repo, run_id, run_date, slot, dryrun)
+        return _run_inner(settings, repo, run_id, run_date, slot, dryrun, no_ai_cache=no_ai_cache)
     except Exception as e:  # noqa: BLE001
         tb = traceback.format_exc()
         logger.exception("运行失败: %s", e)
@@ -124,6 +124,7 @@ def run(slot: str, dryrun: bool = False) -> int:
 
 def _run_inner(
     settings: Settings, repo: Repository, run_id: str, run_date: str, slot: str, dryrun: bool,
+    no_ai_cache: bool = False,
 ) -> int:
     # 1) 选股池
     snapshots = fetch_universe(
@@ -190,6 +191,7 @@ def _run_inner(
             max_retry=settings.deepseek_max_retry,
             repo=repo,
             daily_budget=settings.ai_daily_budget,
+            use_cache=not no_ai_cache,
         )
         for ev in ai_call_list:
             ev.ai = client.evaluate(ev, run_date=run_date)
@@ -365,9 +367,11 @@ def main() -> int:
 
     p_run = sub.add_parser("run", help="正常运行")
     p_run.add_argument("--slot", choices=["midday", "close"], required=True)
+    p_run.add_argument("--no-ai-cache", action="store_true", help="忽略 AI 结果缓存，强制重新调用")
 
     p_dry = sub.add_parser("dryrun", help="干跑：不写库、不推送")
     p_dry.add_argument("--slot", choices=["midday", "close"], required=True)
+    p_dry.add_argument("--no-ai-cache", action="store_true", help="忽略 AI 结果缓存，强制重新调用")
 
     sub.add_parser("track", help="仅更新跟踪表（T+N 收益）")
     sub.add_parser("rebuild-index", help="仅重建 reports/index.html")
@@ -381,9 +385,9 @@ def main() -> int:
     if cmd in (None, "run"):
         if not args.slot:
             p.error("--slot is required")
-        return run(args.slot, dryrun=False)
+        return run(args.slot, dryrun=False, no_ai_cache=getattr(args, "no_ai_cache", False))
     if cmd == "dryrun":
-        return run(args.slot, dryrun=True)
+        return run(args.slot, dryrun=True, no_ai_cache=getattr(args, "no_ai_cache", False))
     if cmd == "track":
         settings = load_settings()
         setup_logging(settings.log_level, settings.log_dir)
