@@ -52,56 +52,122 @@ def _esc(v) -> str:
 
 
 _CSS = """
-:root { color-scheme: light dark; --bg:#fff; --fg:#222; --muted:#666; --line:#e0e0e0;
-  --row-alt:#fafbfc; --th:#f5f7fa; --link:#1a73e8; --pos:#d93025; --neg:#188038;
-  --tag-tov-bg:#e8f0fe; --tag-tov-fg:#1a73e8;
-  --tag-hot-bg:#fce8e6; --tag-hot-fg:#d93025;
-  --tag-focus-bg:#fef7e0; --tag-focus-fg:#b06000;
-  --tag-allow-bg:#e6f4ea; --tag-allow-fg:#137333;
-  --tag-deny-bg:#fce8e6; --tag-deny-fg:#c5221f;
+:root {
+  color-scheme: light dark;
+  --bg:#f6f7f9; --card:#ffffff; --fg:#1a1d23; --muted:#6b7280; --line:#e5e7eb;
+  --row-alt:#f9fafb; --th:#f3f4f6; --link:#2563eb; --pos:#dc2626; --neg:#16a34a;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.04);
+  --tag-tov-bg:#dbeafe; --tag-tov-fg:#1d4ed8;
+  --tag-hot-bg:#fee2e2; --tag-hot-fg:#b91c1c;
+  --tag-focus-bg:#fef3c7; --tag-focus-fg:#92400e;
+  --tag-allow-bg:#dcfce7; --tag-allow-fg:#15803d;
+  --tag-deny-bg:#fee2e2; --tag-deny-fg:#b91c1c;
+  --score-bg: linear-gradient(90deg,#22c55e,#3b82f6);
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#1a1b1e; --fg:#e3e3e3; --muted:#9aa0a6; --line:#2c2d30;
-    --row-alt:#202125; --th:#26272b; --link:#8ab4f8; --pos:#ff6b6b; --neg:#52d18a;
-    --tag-tov-bg:#1f2a40; --tag-tov-fg:#8ab4f8;
-    --tag-hot-bg:#3b1d1c; --tag-hot-fg:#ff6b6b;
-    --tag-focus-bg:#3a2e10; --tag-focus-fg:#ffd278;
-    --tag-allow-bg:#1a3322; --tag-allow-fg:#52d18a;
-    --tag-deny-bg:#3a1d1d; --tag-deny-fg:#ff8a80;
+  :root {
+    --bg:#0f1115; --card:#1a1d23; --fg:#e5e7eb; --muted:#9ca3af; --line:#2a2f37;
+    --row-alt:#1f242c; --th:#222831; --link:#60a5fa; --pos:#f87171; --neg:#4ade80;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3);
+    --tag-tov-bg:#1e293b; --tag-tov-fg:#93c5fd;
+    --tag-hot-bg:#3f1d1d; --tag-hot-fg:#fca5a5;
+    --tag-focus-bg:#3a2e10; --tag-focus-fg:#fcd34d;
+    --tag-allow-bg:#14361f; --tag-allow-fg:#86efac;
+    --tag-deny-bg:#3f1d1d; --tag-deny-fg:#fca5a5;
   }
 }
 * { box-sizing: border-box; }
-body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-  margin: 24px auto; max-width: 1180px; padding: 0 16px; line-height: 1.55;
-  background: var(--bg); color: var(--fg); }
+html, body { margin:0; padding:0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--fg);
+  line-height: 1.55;
+  -webkit-text-size-adjust: 100%;
+  font-size: 15px;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 16px; }
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
-h1 { font-size: 22px; margin: 0 0 4px; }
-h2 { font-size: 18px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+
+/* Header */
+.hdr h1 { font-size: 20px; margin: 0 0 4px; line-height: 1.3; }
+.hdr .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.hdr .meta a { margin: 0 4px; }
+
+/* Section */
+h2 { font-size: 17px; margin: 24px 0 12px; padding-left: 10px; border-left: 3px solid var(--link); }
 h3 { font-size: 15px; margin: 16px 0 8px; }
-.meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
-.stat { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0 16px; font-size: 13px; }
-.stat span b { color: var(--link); }
-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 12px; }
-th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
-th { background: var(--th); font-weight: 600; }
-tr:nth-child(even) td { background: var(--row-alt); }
-.pos { color: var(--pos); font-weight: 600; }
-.neg { color: var(--neg); font-weight: 600; }
-.tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px; }
+
+/* Stat chips */
+.stat { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; padding:0; }
+.stat span {
+  background: var(--card); border:1px solid var(--line); border-radius: 999px;
+  padding: 4px 12px; font-size: 12.5px; color: var(--muted);
+  box-shadow: var(--shadow);
+}
+.stat span b { color: var(--fg); margin-left: 4px; font-weight: 600; }
+
+/* Cards */
+.cards { display: grid; gap: 12px; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px; box-shadow: var(--shadow);
+}
+.card-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom: 10px; }
+.card-title { font-weight: 700; font-size: 16px; letter-spacing: .3px; }
+.card-title small { font-weight: 400; color: var(--muted); margin-left: 6px; font-size: 12px; }
+.card-score {
+  font-weight: 700; font-size: 18px;
+  background: var(--score-bg); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.kv { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:8px 12px; margin: 8px 0; }
+.kv .k { color: var(--muted); font-size: 11.5px; }
+.kv .v { font-size: 14px; font-weight: 600; margin-top: 2px; }
+.reason { font-size: 13px; color: var(--fg); margin-top: 6px; line-height: 1.6; }
+.ind { font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+.empty { color: var(--muted); font-style: italic; padding: 12px 0; }
+
+/* Tags / pills */
+.tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; margin-right: 4px; line-height: 1.6; }
 .tag-tov { background: var(--tag-tov-bg); color: var(--tag-tov-fg); }
 .tag-hot { background: var(--tag-hot-bg); color: var(--tag-hot-fg); }
 .tag-focus { background: var(--tag-focus-bg); color: var(--tag-focus-fg); }
 .tag-allow { background: var(--tag-allow-bg); color: var(--tag-allow-fg); }
 .tag-deny { background: var(--tag-deny-bg); color: var(--tag-deny-fg); }
-details { margin: 4px 0; }
-summary { cursor: pointer; color: var(--link); font-size: 12px; }
-.reason { color: var(--fg); font-size: 12px; white-space: pre-wrap; }
-.reason.muted { color: var(--muted); }
-.empty { color: var(--muted); font-style: italic; }
-footer { color: var(--muted); font-size: 12px; margin-top: 24px; border-top: 1px solid var(--line); padding-top: 8px; }
-.kline-cell { width: 220px; height: 100px; }
-@media (max-width: 720px) { .kline-cell { width: 160px; height: 80px; } }
+
+.pos { color: var(--pos); font-weight: 700; }
+.neg { color: var(--neg); font-weight: 700; }
+
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--link); font-size: 12.5px; padding: 4px 0; }
+details[open] summary { margin-bottom: 6px; }
+
+/* Table (used by prev/breakdown) */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; border:1px solid var(--line); background: var(--card); box-shadow: var(--shadow); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { background: var(--th); font-weight: 600; color: var(--muted); font-size: 12px; }
+tr:last-child td { border-bottom: 0; }
+tr:nth-child(even) td { background: var(--row-alt); }
+td .reason { white-space: normal; min-width: 220px; }
+
+/* K线 */
+.kline-cell { width: 100%; min-width: 260px; height: 110px; }
+
+footer { color: var(--muted); font-size: 12px; margin-top: 32px; padding: 16px 0; border-top: 1px solid var(--line); text-align: center; }
+
+/* Mobile tweaks */
+@media (max-width: 640px) {
+  body { font-size: 14.5px; }
+  .wrap { padding: 12px; }
+  .hdr h1 { font-size: 18px; }
+  h2 { font-size: 16px; margin: 20px 0 10px; }
+  .card { padding: 12px; border-radius: 10px; }
+  .card-title { font-size: 15px; }
+  .card-score { font-size: 16px; }
+  .kv { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .kline-cell { height: 90px; min-width: 220px; }
+}
 """
 
 
@@ -133,7 +199,7 @@ def _sources_html(sources) -> str:
 def _render_pushed_table(pushed: List[StockEvaluation]) -> str:
     if not pushed:
         return '<p class="empty">本次未触发推送（候选池为空或 AI 全部否决）。</p>'
-    rows = []
+    cards = []
     for e in pushed:
         s, ind, st, ai = e.snapshot, e.indicators, e.strategy, e.ai
         score = ai.score if ai else 0
@@ -165,8 +231,15 @@ def _render_pushed_table(pushed: List[StockEvaluation]) -> str:
             + "<br>".join(details_lines) + "</div></details>"
         ) if details_lines else ""
 
+        def _has(v):
+            if v is None:
+                return False
+            try:
+                return not math.isnan(float(v))
+            except (TypeError, ValueError):
+                return False
         has_ind = any(
-            v is not None
+            _has(v)
             for v in (ind.ma5, ind.ma10, ind.ma20, ind.bias10, ind.bias20,
                       ind.rsi14, ind.macd_hist, ind.volume_ratio)
         )
@@ -177,31 +250,32 @@ def _render_pushed_table(pushed: List[StockEvaluation]) -> str:
                 f"RSI14 {_fmt(ind.rsi14, 1)} · MACD {_fmt(ind.macd_hist, 3)} · "
                 f"量比 {_fmt(ind.volume_ratio)}"
             )
-            ind_html = f'<div class="reason" style="color:#888;margin-top:4px;">{_esc(ind_line)}</div>'
+            ind_html = f'<div class="ind">{_esc(ind_line)}</div>'
         else:
-            ind_html = '<div class="reason" style="color:#888;margin-top:4px;">指标缺失（K 线未拉到）</div>'
+            ind_html = '<div class="ind">指标缺失（K 线未拉到）</div>'
 
-        rows.append(f"""
-<tr>
-  <td>{_esc(s.code)}<br>{_esc(s.name)}<br>{_sources_html(s.sources)}{focus_html}</td>
-  <td>{_fmt(s.price)}<br>{_pct_html(s.pct_change)}</td>
-  <td>{s.turnover/1e8:.2f} 亿<br>振幅 {_fmt(s.amplitude)}%</td>
-  <td>{score} / 100<br>{allow_html}</td>
-  <td>{st.hits} 票<br>{_esc(", ".join(st.signals)) or "-"}</td>
-  <td><div class="reason">{_esc(reason) or "-"}</div>
-      {ind_html}
-      {details_html}
-  </td>
-</tr>
+        signals_html = _esc(", ".join(st.signals)) if st.signals else "-"
+        cards.append(f"""
+<div class="card">
+  <div class="card-head">
+    <div class="card-title">{_esc(s.code)} <small>{_esc(s.name)}</small></div>
+    <div class="card-score">{score}<small style="font-size:12px;color:var(--muted);font-weight:400;"> /100</small></div>
+  </div>
+  <div>{_sources_html(s.sources)}{focus_html}{allow_html}</div>
+  <div class="kv">
+    <div><div class="k">最新价</div><div class="v">{_fmt(s.price)}</div></div>
+    <div><div class="k">涨跌幅</div><div class="v">{_pct_html(s.pct_change)}</div></div>
+    <div><div class="k">成交额</div><div class="v">{s.turnover/1e8:.2f} 亿</div></div>
+    <div><div class="k">振幅</div><div class="v">{_fmt(s.amplitude)}%</div></div>
+    <div><div class="k">命中</div><div class="v">{st.hits} 票</div></div>
+    <div><div class="k">信号</div><div class="v" style="font-size:12px;font-weight:500;">{signals_html}</div></div>
+  </div>
+  <div class="reason">{_esc(reason) or "-"}</div>
+  {ind_html}
+  {details_html}
+</div>
 """)
-    return f"""
-<table>
-  <thead>
-    <tr><th>代码/名称</th><th>最新价/涨跌幅</th><th>成交额</th><th>AI 评分</th><th>策略</th><th>AI 理由 / 指标</th></tr>
-  </thead>
-  <tbody>{''.join(rows)}</tbody>
-</table>
-"""
+    return f'<div class="cards">{"".join(cards)}</div>'
 
 
 def _render_prev_table(
@@ -252,12 +326,12 @@ def _render_prev_table(
         f"<span>胜率: <b>{win:.0f}%</b></span></p>"
     )
     return summary + f"""
-<table>
+<div class="table-wrap"><table>
   <thead>
     <tr><th>代码/名称</th><th>推送时价</th><th>当前价</th><th>涨跌幅</th><th>当时AI</th><th>当时理由</th></tr>
   </thead>
   <tbody>{''.join(rows)}</tbody>
-</table>
+</table></div>
 """
 
 
@@ -286,8 +360,8 @@ def _render_signal_breakdown(rows: list) -> str:
     )
     return (
         '<h2>策略归因（按信号 5 日表现）</h2>'
-        '<table><thead><tr><th>信号</th><th>样本</th><th>平均收益</th><th>胜率</th></tr></thead>'
-        f'<tbody>{body}</tbody></table>'
+        '<div class="table-wrap"><table><thead><tr><th>信号</th><th>样本</th><th>平均收益</th><th>胜率</th></tr></thead>'
+        f'<tbody>{body}</tbody></table></div>'
     )
 
 
@@ -301,8 +375,8 @@ def _render_ai_calibration(rows: list) -> str:
     )
     return (
         '<h2>AI 评分校准（5 日表现按分箱）</h2>'
-        '<table><thead><tr><th>分箱</th><th>样本</th><th>平均收益</th><th>胜率</th></tr></thead>'
-        f'<tbody>{body}</tbody></table>'
+        '<div class="table-wrap"><table><thead><tr><th>分箱</th><th>样本</th><th>平均收益</th><th>胜率</th></tr></thead>'
+        f'<tbody>{body}</tbody></table></div>'
     )
 
 
@@ -342,7 +416,7 @@ def _render_kline_section(pushed: List[StockEvaluation], klines_map: dict) -> st
         return ""
     return (
         '<h2>推送票 60 日 K 线</h2>'
-        f'<table><tbody>{"".join(items)}</tbody></table>'
+        f'<div class="table-wrap"><table><tbody>{"".join(items)}</tbody></table></div>'
         '<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>'
         '<script>'
         'function renderK(id, dates, data){'
@@ -393,13 +467,16 @@ def render_html(
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>{_esc(title)}</title>
 <style>{_CSS}</style>
 </head>
 <body>
-  <h1>{_esc(title)}</h1>
-  <div class="meta">生成时间 {gen_at} · <a href="index.html">月度索引</a> · <a href="../index.html">全部报告</a></div>
+<div class="wrap">
+  <header class="hdr">
+    <h1>{_esc(title)}</h1>
+    <div class="meta">生成时间 {gen_at} · <a href="index.html">月度索引</a> · <a href="../index.html">全部报告</a></div>
+  </header>
   <div class="stat">{stat_line}</div>
 
   <h2>本次推送（AI 评分前 {stats.get('push_top_n', 5)} ∪ 重点票）</h2>
@@ -417,6 +494,7 @@ def render_html(
   <footer>
     数据来源：东方财富 / 同花顺；AI 判定：DeepSeek。仅供研究，不构成投资建议。
   </footer>
+</div>
 </body>
 </html>
 """
@@ -481,11 +559,13 @@ def write_index(reports_dir: Path, runs: list) -> Path:
             )
         page = (
             '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>DailyStock {ym}</title><style>{_CSS}</style></head><body>'
+            '<div class="wrap"><header class="hdr">'
             f'<h1>DailyStock 报告 - {ym}</h1>'
-            '<div class="meta"><a href="../index.html">← 返回总索引</a></div>'
-            '<table><thead><tr><th>报告</th><th>候选池</th><th>候选</th><th>重点</th><th>否决</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table></body></html>'
+            '<div class="meta"><a href="../index.html">← 返回总索引</a></div></header>'
+            '<div class="table-wrap"><table><thead><tr><th>报告</th><th>候选池</th><th>候选</th><th>重点</th><th>否决</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div></div></body></html>'
         )
         (reports_dir / ym).mkdir(parents=True, exist_ok=True)
         (reports_dir / ym / "index.html").write_text(page, encoding="utf-8")
@@ -500,10 +580,11 @@ def write_index(reports_dir: Path, runs: list) -> Path:
         )
     total_page = (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>DailyStock 报告</title><style>{_CSS}</style></head><body>'
-        '<h1>DailyStock 报告索引</h1>'
-        '<table><thead><tr><th>月份</th><th>报告数</th></tr></thead>'
-        f'<tbody>{"".join(rows)}</tbody></table></body></html>'
+        '<div class="wrap"><header class="hdr"><h1>DailyStock 报告索引</h1></header>'
+        '<div class="table-wrap"><table><thead><tr><th>月份</th><th>报告数</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div></div></body></html>'
     )
     out = reports_dir / "index.html"
     out.write_text(total_page, encoding="utf-8")
