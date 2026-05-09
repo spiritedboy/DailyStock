@@ -260,7 +260,10 @@ def fetch_universe(
             if len(hot_codes_filtered) >= top_n_hot:
                 break
         hot_source_label = "gainers"
-        logger.info("热榜源全部失败，已用涨幅榜前 %d 兜底", len(hot_codes_filtered))
+        logger.info(
+            "热榜无可用代码(拉取=%d, 行情命中=%d, 排除=%d)，已用涨幅榜前 %d 兜底",
+            len(hot_codes), len(miss_not_in_spot), len(miss_excluded), len(hot_codes_filtered),
+        )
 
     logger.info(
         "成交额TopN=%d 命中=%d；热榜TopN=%d 过滤后=%d (来源=%s)",

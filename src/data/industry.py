@@ -22,7 +22,7 @@ def _build_industry_map() -> Dict[str, str]:
     try:
         boards = ak.stock_board_industry_name_em()
     except Exception as e:  # noqa: BLE001
-        logger.warning("拉取行业板块列表失败(跳过行业去集中): %s", e)
+        logger.info("拉取行业板块列表失败(跳过行业去集中): %s", e)
         return out
     if boards is None or boards.empty:
         return out
@@ -53,13 +53,15 @@ def _build_industry_map() -> Dict[str, str]:
 
 def load_industry_map(cache_path: Path, ttl_days: int = 7) -> Dict[str, str]:
     cache_path = Path(cache_path)
+    stale_cache: Dict[str, str] = {}
     if cache_path.exists():
         try:
             stat = cache_path.stat()
             age = datetime.now() - datetime.fromtimestamp(stat.st_mtime)
+            with cache_path.open("r", encoding="utf-8") as f:
+                stale_cache = json.load(f)
             if age < timedelta(days=ttl_days):
-                with cache_path.open("r", encoding="utf-8") as f:
-                    return json.load(f)
+                return stale_cache
         except Exception as e:  # noqa: BLE001
             logger.debug("读取行业缓存失败: %s", e)
     # 失败短缓存：避免上游持续异常时每次运行都重试 N 分钟
@@ -69,9 +71,8 @@ def load_industry_map(cache_path: Path, ttl_days: int = 7) -> Dict[str, str]:
             age = datetime.now() - datetime.fromtimestamp(fail_marker.stat().st_mtime)
             if age < timedelta(minutes=30):
                 logger.info("行业映射上次构建失败 %ds 内，跳过本次拉取", int(age.total_seconds()))
-                if cache_path.exists():
-                    with cache_path.open("r", encoding="utf-8") as f:
-                        return json.load(f)
+                if stale_cache:
+                    return stale_cache
                 return {}
         except Exception:  # noqa: BLE001
             pass
@@ -88,4 +89,7 @@ def load_industry_map(cache_path: Path, ttl_days: int = 7) -> Dict[str, str]:
     else:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         fail_marker.touch()
+        if stale_cache:
+            logger.info("行业映射远程构建失败，回退到过期缓存 (%d 条)", len(stale_cache))
+            return stale_cache
     return data
