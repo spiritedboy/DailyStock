@@ -93,8 +93,11 @@ def run(slot: str, dryrun: bool = False) -> int:
     now = datetime.now()
     run_date = now.strftime("%Y-%m-%d")
     if not is_trading_day(now):
-        logger.info("非交易日(周末)，跳过执行")
-        return 0
+        if dryrun:
+            logger.warning("非交易日 (%s)，dryrun 继续执行", now.strftime("%a"))
+        else:
+            logger.info("非交易日(周末)，跳过执行")
+            return 0
 
     repo = Repository(settings.sqlite_path, settings.data_dir)
     run_id = repo.new_run_id()
