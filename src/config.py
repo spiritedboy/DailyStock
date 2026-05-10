@@ -119,7 +119,7 @@ class Settings:
     market_filter_enabled: bool = True
     market_filter_min_score: int = 90  # 大盘不利时仅推 score>=该值
     universe_min_size: int = 50  # 选股池<该值则中止 (熝断)
-    yiziban_filter_enabled: bool = True
+    limit_up_filter_enabled: bool = True
 
     # 跟踪 / 评估
     tracking_enabled: bool = True
@@ -216,7 +216,10 @@ def load_settings() -> Settings:
         market_filter_enabled=_get_bool("MARKET_FILTER_ENABLED", True),
         market_filter_min_score=_get_int("MARKET_FILTER_MIN_SCORE", 90),
         universe_min_size=_get_int("UNIVERSE_MIN_SIZE", 50),
-        yiziban_filter_enabled=_get_bool("YIZIBAN_FILTER_ENABLED", True),
+        limit_up_filter_enabled=_get_bool(
+            "LIMIT_UP_FILTER_ENABLED",
+            _get_bool("YIZIBAN_FILTER_ENABLED", True),
+        ),
         tracking_enabled=_get_bool("TRACKING_ENABLED", True),
         tracking_lookback_days=_get_int("TRACKING_LOOKBACK_DAYS", 30),
         report_host=_get("REPORT_HOST", "").rstrip("/"),

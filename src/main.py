@@ -236,10 +236,10 @@ def _run_inner(
         ev.is_focus = True
     raw_pushed = _select_pushed(evals, focus, settings.push_top_n)
 
-    if settings.yiziban_filter_enabled:
+    if settings.limit_up_filter_enabled:
         kept, removed_yzb = filter_unbuyable(raw_pushed)
         if removed_yzb:
-            logger.info("剔除一字板 %d 只: %s", len(removed_yzb), [e.snapshot.code for e in removed_yzb])
+            logger.info("剔除涨停票 %d 只: %s", len(removed_yzb), [e.snapshot.code for e in removed_yzb])
         raw_pushed = kept
 
     if market_bad:

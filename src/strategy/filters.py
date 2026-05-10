@@ -39,11 +39,12 @@ def is_yiziban(snapshot, eps_pct: float = 0.3) -> bool:
 
 
 def filter_unbuyable(evals: List[StockEvaluation]) -> Tuple[List[StockEvaluation], List[StockEvaluation]]:
-    """剔除一字板。返回 (kept, removed)。"""
+    """剔除涨停票（含一字板）。返回 (kept, removed)。"""
     kept: List[StockEvaluation] = []
     removed: List[StockEvaluation] = []
     for e in evals:
-        if is_yiziban(e.snapshot):
+        # 涨停票当日通常难买到，统一剔除；一字板是其子集。
+        if is_daily_limit_up(e.snapshot):
             removed.append(e)
         else:
             kept.append(e)
