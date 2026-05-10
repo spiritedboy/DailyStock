@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Set, Tuple
 
@@ -129,6 +129,7 @@ def _load_spot() -> pd.DataFrame:
 def _fetch_ths_hot_codes(top_n: int) -> List[str]:
     """热榜前 N 的股票代码：依次尝试多个 AKShare 源，全部失败则返回空列表（非致命）。"""
     import akshare as ak
+    import os
 
     # 尝试顺序：东财热榜（标准 100 行）→ 同花顺 → 问财 → 人气飙升 → 百度热搜
     # 注：stock_hot_rank_latest_em 返回的是 key-value 摘要（item/value），不是榜单，放最后兜底
@@ -144,16 +145,27 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
         "股票代码", "代码", "code", "symbol", "Symbol", "证券代码",
         "名称/代码", "名称代码", "股票名称代码",
     )
+    timeout_sec = float(os.getenv("HOT_SOURCE_TIMEOUT", "8") or 8)
     df = None
     code_col = None
     tried = []
+    logger.info("热榜拉取开始: top_n=%d timeout=%ss", top_n, int(timeout_sec))
+
+    def _call_with_timeout(func, timeout: float):
+        pool = ThreadPoolExecutor(max_workers=1)
+        fut = pool.submit(func)
+        try:
+            return fut.result(timeout=timeout)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
     for fname in candidates:
         fn = getattr(ak, fname, None)
         if fn is None:
             continue
         tried.append(fname)
         try:
-            d = fn()
+            d = _call_with_timeout(fn, timeout_sec)
             if d is None or d.empty:
                 logger.info("热榜源 %s 返回空，继续尝试下一源", fname)
                 continue
@@ -173,6 +185,8 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
             df, code_col = d, cc
             logger.info("热榜源 %s 命中 (%d 行，代码列=%s)", fname, len(df), code_col)
             break
+        except FuturesTimeoutError:
+            logger.info("热榜源 %s 调用超时(>%ss)，继续尝试下一源", fname, int(timeout_sec))
         except Exception as e:  # noqa: BLE001
             logger.info("热榜源 %s 调用失败: %s", fname, e)
     if df is None or df.empty or not code_col:

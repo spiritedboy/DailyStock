@@ -215,6 +215,7 @@ crontab -e
 - 实时行情：`SPOT_SOURCE=auto` 时按 `stock_zh_a_spot_em`（东财）→ `stock_zh_a_spot`（新浪）顺序回退，每个源 3 次重试；可强制 `em` / `sina`
 - 日线：`stock_zh_a_hist`（东财）→ `stock_zh_a_daily`（新浪，自动加 sh/sz/bj 前缀）双源回退
 - 热榜：依次 `stock_hot_rank_em` → `_ths` → `_wc` → `stock_hot_up_em` → `stock_hot_search_baidu` → `stock_hot_rank_latest_em`，**自动跳过没有代码列的源**；全部失败仅 INFO 不报错
+- 热榜单源超时：`HOT_SOURCE_TIMEOUT`（默认 8 秒），单个源阻塞会自动超时跳过
 - 行业映射：`stock_board_industry_name_em` 单次拉取（不重试），失败写入 30 分钟失败标记避免反复重连
 
 ## 默认策略（按优先级：硬过滤 → 一票否决 → 信号）
@@ -293,6 +294,7 @@ http://your.host/reports/2026-05/05-09-afternoon.html
 - 行情为空：交易时段外或 AKShare 限流；`SPOT_SOURCE=auto` 时会自动回退到新浪，仍空则可稍后重跑或检查网络
 - 日线 `RemoteDisconnected`：东财长连接不稳；fetcher 会自动切到新浪重试，无需手动干预
 - 热榜日志 `热榜源 ... 命中但无代码列`：正常，自动跳过到下一源
+- 若长时间停在“行情源 sina 成功”后无输出：通常是热榜接口阻塞；可通过 `HOT_SOURCE_TIMEOUT=8` 控制单源超时并继续后续流程
 - 行业映射卡住：30 分钟内只重试一次（`industry_map.fail` 标记），如要强制刷新删除 `data/industry_map.fail` 即可
 - AI 报告反复出现旧理由：`prompt_ver` 已会自动让旧缓存失效；如有意外可 `--no-ai-cache` 重跑或 `sqlite3 data/dailystock.db "DELETE FROM ai_cache WHERE run_date='YYYY-MM-DD';"`
 - DeepSeek 超时（`Read timed out`）：API 高负载或故障。缓解方案：(1) 改 `.env` `DEEPSEEK_TIMEOUT=60`（从 30 改到 60 秒）；(2) `AI_MAX_CANDIDATES=5`（降低并发，从 0 全量改为只调前 5 只候选，减轻 API 压力）；(3) 如果还是频繁超时说明 DeepSeek 那边确实有问题，建议降档次、稍后重跑或联系官方
