@@ -62,7 +62,7 @@ cp .env.example .env
 | 命令 | 何时用 | 副作用 |
 | --- | --- | --- |
 | `run --slot midday\|close` | **正式运行**（cron 自动调） | 写库 + 写报告 + 推钉钉 + 跟踪 |
-| `dryrun --slot midday\|close` | **测试 / 调参 / 新环境验证** | 只生成 HTML 到本地，**不写库、不推钉钉、不更新跟踪表** |
+| `dryrun --slot midday\|close` | **测试 / 调参 / 新环境验证** | 生成 HTML 到本地，**不写库、会推钉钉（标题带[DRYRUN]）、不更新跟踪表** |
 | `track` | 单独补算历史推送的 T+N 收益 | 只更新 `pick_returns` 表 |
 | `rebuild-index` | 改了 HTML 模板想重刷总索引 | 只重写 `reports/index.html` |
 

@@ -310,8 +310,8 @@ def _run_inner(
         except Exception as e:  # noqa: BLE001
             logger.warning("写 index.html 失败: %s", e)
 
-    # 12) 钉钉
-    if not dryrun and settings.dingtalk_webhook and not repo.already_notified(run_date, slot, "report", "url"):
+    # 12) 钉钉（dryrun 也推送；dryrun 不做去重、不落库）
+    if settings.dingtalk_webhook and (dryrun or not repo.already_notified(run_date, slot, "report", "url")):
         ding = DingTalkClient(
             webhook=settings.dingtalk_webhook,
             secret=settings.dingtalk_secret,
@@ -320,16 +320,18 @@ def _run_inner(
         )
         ai_ok_n = sum(1 for e in evals if e.ai and e.ai.ok)
         top_n_used = min(settings.push_top_n, ai_ok_n)
+        title_prefix = "[DRYRUN] " if dryrun else ""
         text_msg = (
-            f"DailyStock 选股报告 - {run_date} {SLOT_DISPLAY.get(slot, slot)}\n"
+            f"{title_prefix}DailyStock 选股报告 - {run_date} {SLOT_DISPLAY.get(slot, slot)}\n"
             f"推送 {len(pushed)} 只 (重点 {len(focus)} / TopAI {top_n_used})\n"
             f"{report_url}"
         )
         try:
             resp = ding.send_text(text_msg)
             ok = resp.get("errcode", -1) == 0
-            repo.save_notification(run_id, run_date, slot, "report", "url", ok, str(resp))
-            logger.info("钉钉推送: ok=%s", ok)
+            if not dryrun:
+                repo.save_notification(run_id, run_date, slot, "report", "url", ok, str(resp))
+            logger.info("钉钉推送%s: ok=%s", "(dryrun)" if dryrun else "", ok)
             if not ok:
                 _send_email_fallback(
                     settings, f"[DailyStock] 钉钉失败 {run_date} {slot}",
@@ -369,7 +371,7 @@ def main() -> int:
     p_run.add_argument("--slot", choices=["midday", "close"], required=True)
     p_run.add_argument("--no-ai-cache", action="store_true", help="忽略 AI 结果缓存，强制重新调用")
 
-    p_dry = sub.add_parser("dryrun", help="干跑：不写库、不推送")
+    p_dry = sub.add_parser("dryrun", help="干跑：不写库，但会推送钉钉")
     p_dry.add_argument("--slot", choices=["midday", "close"], required=True)
     p_dry.add_argument("--no-ai-cache", action="store_true", help="忽略 AI 结果缓存，强制重新调用")
 
