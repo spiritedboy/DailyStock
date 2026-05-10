@@ -7,7 +7,7 @@
 - **大盘环境**：上证指数 vs MA20，弱势时仅推送 AI 高分票
 - **策略筛选**：5+ 信号策略 + 2 个一票否决，可单独启停
 - **AI 判定**：DeepSeek Chat（交易员人格提示词），结果按 `prompt_ver+run_date+code` 缓存（`ai_cache` 表，提示词变更自动失效）+ 调用预算（`AI_DAILY_BUDGET`）+ `--no-ai-cache` 强制重算
-- **推送过滤**：剔除一字板（涨停且开=高=低=收，无法买入）；同一行业最多 N 只
+- **推送过滤**：候选前剔除涨停票（包含一字板，推送前再兜底一次）；同一行业最多 N 只
 - **HTML 报告**：手机端卡片式响应式 UI、按月分目录、ECharts 小 K 线、`reports/index.html` 总索引 + 月度索引
 - **跟踪表现**：`pick_returns` 表记录推送票 T+1/3/5/10/20 收益；报告内嵌策略归因 & AI 评分校准
 - **通知**：钉钉只发 URL 文本；钉钉异常自动邮件兜底（SMTP）
@@ -31,7 +31,7 @@ src/
     indicators.py        # MA / 均量 / MACD / RSI / 形态
     rules.py             # 信号 + 一票否决
     pipeline.py          # 并发管线
-    filters.py           # 一字板剔除 / 行业去集中
+    filters.py           # 涨停票过滤 / 行业去集中
   ai/deepseek_client.py  # 缓存 + 预算
   decision/ranker.py
   notify/

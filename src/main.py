@@ -27,7 +27,7 @@ from .notify.dingtalk import DingTalkClient
 from .notify.email_client import EmailClient
 from .report.html_renderer import SLOT_DISPLAY, write_index, write_report
 from .storage.repository import Repository
-from .strategy.filters import diversify_by_industry, filter_unbuyable
+from .strategy.filters import diversify_by_industry, filter_unbuyable, is_daily_limit_up
 from .strategy.pipeline import run_pipeline
 from .tracking.tracker import (
     ai_calibration,
@@ -141,6 +141,22 @@ def _run_inner(
         )
         return 3
 
+    # 1.5) 候选前剔除涨停票：避免在不可买入标的上浪费策略/AI算力
+    if settings.limit_up_filter_enabled:
+        kept_snapshots = []
+        removed_limit_codes = []
+        for s in snapshots:
+            if is_daily_limit_up(s):
+                removed_limit_codes.append(s.code)
+            else:
+                kept_snapshots.append(s)
+        if removed_limit_codes:
+            logger.info("候选前剔除涨停票 %d 只: %s", len(removed_limit_codes), removed_limit_codes[:20])
+        snapshots = kept_snapshots
+        if not snapshots:
+            logger.warning("候选前剔除涨停后样本为空，中止")
+            return 3
+
     # 2) 大盘环境
     above_ma20, market_info = assess_market()
     market_bad = (settings.market_filter_enabled and above_ma20 is False)
@@ -230,16 +246,16 @@ def _run_inner(
     else:
         logger.info("候选池为空或未配置 API Key，跳过 DeepSeek")
 
-    # 6) 重点 + 推送 + 一字板剔除 + 行业去集中
+    # 6) 重点 + 推送 + 涨停兜底剔除 + 行业去集中
     focus = select_focus(evals, settings.focus_score, settings.top_k_focus)
     for ev in focus:
         ev.is_focus = True
     raw_pushed = _select_pushed(evals, focus, settings.push_top_n)
 
     if settings.limit_up_filter_enabled:
-        kept, removed_yzb = filter_unbuyable(raw_pushed)
-        if removed_yzb:
-            logger.info("剔除涨停票 %d 只: %s", len(removed_yzb), [e.snapshot.code for e in removed_yzb])
+        kept, removed_limit = filter_unbuyable(raw_pushed)
+        if removed_limit:
+            logger.info("推送前兜底剔除涨停票 %d 只: %s", len(removed_limit), [e.snapshot.code for e in removed_limit])
         raw_pushed = kept
 
     if market_bad:
