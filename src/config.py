@@ -120,7 +120,7 @@ class Settings:
     market_filter_min_score: int = 90  # 大盘不利时仅推 score>=该值
     universe_min_size: int = 50  # 选股池<该值则中止 (熝断)
     limit_up_filter_enabled: bool = True
-
+    max_price: float = 0.0  # 价格上限（0=不限）；一手=100 股，超过此价的票在候选前剔除
     # 跟踪 / 评估
     tracking_enabled: bool = True
     tracking_lookback_days: int = 30
@@ -220,6 +220,7 @@ def load_settings() -> Settings:
             "LIMIT_UP_FILTER_ENABLED",
             _get_bool("YIZIBAN_FILTER_ENABLED", True),
         ),
+        max_price=_get_float("MAX_PRICE", 0.0),
         tracking_enabled=_get_bool("TRACKING_ENABLED", True),
         tracking_lookback_days=_get_int("TRACKING_LOOKBACK_DAYS", 30),
         report_host=_get("REPORT_HOST", "").rstrip("/"),

@@ -158,6 +158,25 @@ def _run_inner(
             logger.warning("候选前剔除涨停后样本为空，中止")
             return 3
 
+    # 1.6) 价格上限过滤（一手 = 100 股，价格太高买不起）
+    if settings.max_price > 0:
+        kept = []
+        removed_price = []
+        for s in snapshots:
+            if s.price > 0 and s.price > settings.max_price:
+                removed_price.append((s.code, s.price))
+            else:
+                kept.append(s)
+        if removed_price:
+            logger.info(
+                "候选前剔除价格 > %.2f 的票 %d 只: %s",
+                settings.max_price, len(removed_price), removed_price[:10],
+            )
+        snapshots = kept
+        if not snapshots:
+            logger.warning("价格过滤后样本为空，中止")
+            return 3
+
     # 2) 大盘环境
     above_ma20, market_info = assess_market()
     market_bad = (settings.market_filter_enabled and above_ma20 is False)
