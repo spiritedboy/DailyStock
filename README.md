@@ -106,6 +106,7 @@ cp .env.example .env
 # 关键项：
 #   SPOT_SOURCE=auto           行情源东财→新浪自动回退（默认）
 #   PUSH_TOP_N=5               推送条数
+#   AI_WORKERS=3               DeepSeek 并发 worker（建议 2-4）
 #   AI_DAILY_BUDGET=0          DeepSeek 每日调用上限（0=不限）
 #   UNIVERSE_MIN_SIZE=50       样本不足直接中止；周末测试可临时改 0
 

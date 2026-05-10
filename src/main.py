@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import sys
 import traceback
@@ -183,6 +184,19 @@ def _run_inner(
     ai_allowed = 0
     ai_budget_hit = False
     if ai_call_list and settings.deepseek_api_key:
+        # 并发前先按预算裁剪，避免并发状态下预算判断竞争。
+        if settings.ai_daily_budget > 0:
+            used = repo.get_ai_usage(run_date)
+            remain = settings.ai_daily_budget - used
+            if remain <= 0:
+                ai_budget_hit = True
+                logger.warning("AI 当日预算已用尽(%d/%d)，跳过本轮调用", used, settings.ai_daily_budget)
+                ai_call_list = []
+            elif remain < len(ai_call_list):
+                ai_call_list = ai_call_list[:remain]
+                ai_budget_hit = True
+                logger.info("AI 预算仅剩 %d 次，本轮按预算裁剪候选", remain)
+
         client = DeepSeekClient(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
@@ -190,18 +204,28 @@ def _run_inner(
             timeout=settings.deepseek_timeout,
             max_retry=settings.deepseek_max_retry,
             repo=repo,
-            daily_budget=settings.ai_daily_budget,
+            daily_budget=0,
             use_cache=not no_ai_cache,
         )
-        for ev in ai_call_list:
-            ev.ai = client.evaluate(ev, run_date=run_date)
-            ai_called += 1
-            if ev.ai and ev.ai.ok and ev.ai.allow:
-                ai_allowed += 1
-            if ev.ai and not ev.ai.ok and "预算耗尽" in (ev.ai.reason or ""):
-                ai_budget_hit = True
-                logger.warning("AI 当日预算已用尽，中止后续调用")
-                break
+        workers = max(1, min(settings.ai_workers, len(ai_call_list)))
+        if ai_call_list:
+            logger.info("AI 并发开始: candidates=%d workers=%d", len(ai_call_list), workers)
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                future_map = {ex.submit(client.evaluate, ev, run_date): ev for ev in ai_call_list}
+                done = 0
+                for fut in as_completed(future_map):
+                    ev = future_map[fut]
+                    try:
+                        ev.ai = fut.result()
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning("AI 任务异常 %s: %s", ev.snapshot.code, e)
+                        ev.ai = None
+                    ai_called += 1
+                    if ev.ai and ev.ai.ok and ev.ai.allow:
+                        ai_allowed += 1
+                    done += 1
+                    if done % 5 == 0 or done == len(ai_call_list):
+                        logger.info("AI 并发进度 %d/%d", done, len(ai_call_list))
         logger.info("AI 完成: called=%d allowed=%d budget_hit=%s", ai_called, ai_allowed, ai_budget_hit)
     else:
         logger.info("候选池为空或未配置 API Key，跳过 DeepSeek")

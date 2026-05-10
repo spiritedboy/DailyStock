@@ -101,6 +101,7 @@ class Settings:
     focus_score: int = 80
     top_k_focus: int = 10
     ai_max_candidates: int = 20
+    ai_workers: int = 3
     ai_daily_budget: int = 0  # 0=不限
     push_top_n: int = 5  # 推送 AI 评分前 N 名（与重点票合并去重）
 
@@ -201,6 +202,7 @@ def load_settings() -> Settings:
         focus_score=_get_int("FOCUS_SCORE", 80),
         top_k_focus=_get_int("TOP_K_FOCUS", 10),
         ai_max_candidates=_get_int("AI_MAX_CANDIDATES", 20),
+        ai_workers=_get_int("AI_WORKERS", 3),
         ai_daily_budget=_get_int("AI_DAILY_BUDGET", 0),
         push_top_n=_get_int("PUSH_TOP_N", 5),
         klines_workers=_get_int("KLINES_WORKERS", 6),
