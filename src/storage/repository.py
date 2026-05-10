@@ -160,7 +160,7 @@ class Repository:
                 ai.score if ai else 0,
                 1 if (ai and ai.allow) else 0,
                 ai.reason if ai else "",
-                1 if e.is_candidate else 0,
+                1 if e.is_candidate() else 0,
                 1 if e.is_focus else 0,
                 1 if e.is_pushed else 0,
                 now,
@@ -280,7 +280,7 @@ class Repository:
                     ai.score if ai else 0,
                     int(bool(ai and ai.allow)),
                     ai.reason if ai else "",
-                    int(e.is_candidate), int(e.is_focus), int(e.is_pushed),
+                    int(e.is_candidate()), int(e.is_focus), int(e.is_pushed),
                 ])
         return path
 

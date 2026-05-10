@@ -6,15 +6,14 @@ from datetime import datetime
 from typing import List
 
 from ..models import StockEvaluation
+from ..utils import safe_fmt
 
 
 SLOT_LABEL = {"midday": "午盘 12:00", "close": "收盘 16:00"}
 
 
 def _fmt(v: float, digits: int = 2) -> str:
-    if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
-        return "N/A"
-    return f"{v:.{digits}f}"
+    return safe_fmt(v, digits=digits, default="N/A")
 
 
 def render_summary_markdown(

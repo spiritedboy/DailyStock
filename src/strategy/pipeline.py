@@ -35,7 +35,7 @@ def run_pipeline(
         evals.append(ev)
         if result.vetoed:
             vetoed_n += 1
-    candidates = [e for e in evals if e.is_candidate]
+    candidates = [e for e in evals if e.is_candidate(cfg.min_signals)]
     logger.info(
         "策略完成: 总计=%d 否决=%d 候选(hits>=%d且未否决)=%d",
         len(snapshots), vetoed_n, cfg.min_signals, len(candidates),

@@ -128,11 +128,12 @@ def _run_inner(
     no_ai_cache: bool = False,
 ) -> int:
     # 1) 选股池
-    snapshots = fetch_universe(
+    snapshots, spot_df = fetch_universe(
         top_n_turnover=settings.top_n_turnover,
         top_n_hot=settings.top_n_hot,
         exclude_prefixes=settings.exclude_prefixes,
         exclude_name_keywords=settings.exclude_name_keywords,
+        spot_source=settings.spot_source,
     )
     if len(snapshots) < settings.universe_min_size:
         logger.warning(
@@ -187,32 +188,19 @@ def _run_inner(
         klines_days=settings.klines_days,
     )
     vetoed = [e for e in evals if e.strategy.vetoed]
-    candidates = [e for e in evals if e.is_candidate]
-    logger.info("否决=%d 候选=%d", len(vetoed), len(candidates))
+    min_signals = settings.strategy.min_signals
+    candidates = [e for e in evals if e.is_candidate(min_signals)]
+    logger.info("否决=%d 候选=%d (阈值 hits>=%d)", len(vetoed), len(candidates), min_signals)
 
     candidates.sort(key=lambda e: e.strategy.hits, reverse=True)
     ai_call_list = candidates
     if settings.ai_max_candidates > 0:
         ai_call_list = candidates[: settings.ai_max_candidates]
 
-    # 5) DeepSeek（带缓存与预算）
+    # 5) DeepSeek（仅缓存，不限额）
     ai_called = 0
     ai_allowed = 0
-    ai_budget_hit = False
     if ai_call_list and settings.deepseek_api_key:
-        # 并发前先按预算裁剪，避免并发状态下预算判断竞争。
-        if settings.ai_daily_budget > 0:
-            used = repo.get_ai_usage(run_date)
-            remain = settings.ai_daily_budget - used
-            if remain <= 0:
-                ai_budget_hit = True
-                logger.warning("AI 当日预算已用尽(%d/%d)，跳过本轮调用", used, settings.ai_daily_budget)
-                ai_call_list = []
-            elif remain < len(ai_call_list):
-                ai_call_list = ai_call_list[:remain]
-                ai_budget_hit = True
-                logger.info("AI 预算仅剩 %d 次，本轮按预算裁剪候选", remain)
-
         client = DeepSeekClient(
             api_key=settings.deepseek_api_key,
             base_url=settings.deepseek_base_url,
@@ -220,7 +208,6 @@ def _run_inner(
             timeout=settings.deepseek_timeout,
             max_retry=settings.deepseek_max_retry,
             repo=repo,
-            daily_budget=0,
             use_cache=not no_ai_cache,
         )
         workers = max(1, min(settings.ai_workers, len(ai_call_list)))
@@ -242,7 +229,7 @@ def _run_inner(
                     done += 1
                     if done % 5 == 0 or done == len(ai_call_list):
                         logger.info("AI 并发进度 %d/%d", done, len(ai_call_list))
-        logger.info("AI 完成: called=%d allowed=%d budget_hit=%s", ai_called, ai_allowed, ai_budget_hit)
+        logger.info("AI 完成: called=%d allowed=%d", ai_called, ai_allowed)
     else:
         logger.info("候选池为空或未配置 API Key，跳过 DeepSeek")
 
@@ -284,7 +271,7 @@ def _run_inner(
     spot_now: dict = {}
     if prev_picks:
         prev_codes = [p["code"] for p in prev_picks]
-        spot_now = fetch_spot_prices(prev_codes)
+        spot_now = fetch_spot_prices(prev_codes, spot_df=spot_df, spot_source=settings.spot_source)
 
     # 8) 跟踪：更新历史推送的 T+N 收益
     if settings.tracking_enabled and not dryrun:
@@ -389,7 +376,6 @@ def _run_inner(
         "run_id": run_id, "run_date": run_date, "slot": slot,
         "total": len(snapshots), "vetoed": len(vetoed), "candidates": len(candidates),
         "ai_called": ai_called, "ai_allowed": ai_allowed,
-        "ai_budget_hit": ai_budget_hit,
         "focus": len(focus), "pushed": len(pushed),
         "market_above_ma20": above_ma20,
         "report_url": report_url,

@@ -80,7 +80,6 @@ class StockEvaluation:
     is_focus: bool = False
     is_pushed: bool = False  # 本次是否被纳入推送列表
 
-    @property
-    def is_candidate(self) -> bool:
+    def is_candidate(self, min_signals: int = 2) -> bool:
         st = self.strategy
-        return st.risk_passed and not st.vetoed and st.hits >= 2
+        return st.risk_passed and not st.vetoed and st.hits >= min_signals

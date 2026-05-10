@@ -38,13 +38,8 @@ def report_paths(
 
 
 def _fmt(v, nd: int = 2) -> str:
-    try:
-        f = float(v)
-        if math.isnan(f):
-            return "-"
-        return f"{f:.{nd}f}"
-    except (TypeError, ValueError):
-        return "-"
+    from ..utils import safe_fmt
+    return safe_fmt(v, digits=nd, default="-")
 
 
 def _esc(v) -> str:

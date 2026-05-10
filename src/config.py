@@ -87,6 +87,7 @@ class Settings:
     dingtalk_at_all: bool = False
 
     # 选股范围
+    spot_source: str = "auto"  # auto / em / sina
     top_n_turnover: int = 100
     top_n_hot: int = 100
     exclude_prefixes: List[str] = field(default_factory=lambda: ["688", "920", "83", "87", "88"])
@@ -102,7 +103,6 @@ class Settings:
     top_k_focus: int = 10
     ai_max_candidates: int = 20
     ai_workers: int = 3
-    ai_daily_budget: int = 0  # 0=不限
     push_top_n: int = 5  # 推送 AI 评分前 N 名（与重点票合并去重）
 
     # 并发 / 缓存
@@ -169,6 +169,7 @@ def load_settings() -> Settings:
         dingtalk_secret=_get("DINGTALK_SECRET"),
         dingtalk_at_mobiles=_get_list("DINGTALK_AT_MOBILES"),
         dingtalk_at_all=_get_bool("DINGTALK_AT_ALL", False),
+        spot_source=_get("SPOT_SOURCE", "auto"),
         top_n_turnover=_get_int("TOP_N_TURNOVER", _get_int("TOP_N", 100)),
         top_n_hot=_get_int("TOP_N_HOT", 100),
         exclude_prefixes=_get_list("EXCLUDE_PREFIXES", "688,920,83,87,88"),
@@ -203,7 +204,6 @@ def load_settings() -> Settings:
         top_k_focus=_get_int("TOP_K_FOCUS", 10),
         ai_max_candidates=_get_int("AI_MAX_CANDIDATES", 20),
         ai_workers=_get_int("AI_WORKERS", 3),
-        ai_daily_budget=_get_int("AI_DAILY_BUDGET", 0),
         push_top_n=_get_int("PUSH_TOP_N", 5),
         klines_workers=_get_int("KLINES_WORKERS", 6),
         klines_days=_get_int("KLINES_DAYS", 250),

@@ -12,6 +12,7 @@ import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..models import AiDecision, StockEvaluation
+from ..utils import safe_fmt
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +46,7 @@ SYSTEM_PROMPT = """你是一名常年活跃在 A 股的一线短线游资操盘�
 
 
 def _fmt(v: float, digits: int = 2) -> str:
-    if v is None:
-        return "N/A"
-    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-        return "N/A"
-    return f"{v:.{digits}f}"
+    return safe_fmt(v, digits=digits, default="N/A")
 
 
 def _is_valid(v) -> bool:
@@ -151,14 +148,13 @@ def _parse(content: str) -> Optional[AiDecision]:
 
 class DeepSeekClient:
     def __init__(self, api_key: str, base_url: str, model: str, timeout: int = 30, max_retry: int = 3,
-                 repo=None, daily_budget: int = 0, use_cache: bool = True):
+                 repo=None, use_cache: bool = True):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
         self.max_retry = max_retry
         self.repo = repo
-        self.daily_budget = int(daily_budget or 0)
         self.use_cache = use_cache
         # 提示词版本号：SYSTEM_PROMPT 变化即缓存自动失效
         self.prompt_ver = hashlib.md5(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:10]
@@ -172,18 +168,11 @@ class DeepSeekClient:
                     score=int(cached["score"]), allow=bool(cached["allow"]),
                     reason=cached["reason"] or "", raw=cached["raw"] or "", ok=True,
                 )
-        # 2) 预算上限
-        if self.repo and run_date and self.daily_budget > 0:
-            used = self.repo.get_ai_usage(run_date)
-            if used >= self.daily_budget:
-                return AiDecision(ok=False, reason=f"AI预算耗尽({used}/{self.daily_budget})")
         try:
             content = self._call(build_user_prompt(ev))
         except Exception as e:  # noqa: BLE001
             logger.warning("DeepSeek 调用失败 %s: %s", ev.snapshot.code, e)
             return AiDecision(ok=False, reason=f"AI失败:{type(e).__name__}")
-        if self.repo and run_date:
-            self.repo.incr_ai_usage(run_date, 1)
         parsed = _parse(content)
         if parsed is None:
             logger.warning("DeepSeek 解析失败 %s: %s", ev.snapshot.code, content[:200])

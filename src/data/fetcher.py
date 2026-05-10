@@ -94,11 +94,9 @@ _SPOT_SOURCES = [
 ]
 
 
-def _load_spot() -> pd.DataFrame:
+def _load_spot(spot_source: str = "auto") -> pd.DataFrame:
     """拉一次全市场实时行情：东财→新浪 双源回退 + 重试。"""
-    import os
-
-    pref = os.getenv("SPOT_SOURCE", "auto").strip().lower()
+    pref = (spot_source or "auto").strip().lower()
     sources = _SPOT_SOURCES
     if pref == "em":
         sources = [_SPOT_SOURCES[0]]
@@ -174,7 +172,8 @@ def _fetch_ths_hot_codes(top_n: int) -> List[str]:
                 # 兜底：在任意字符串列中尝试抽 6 位数字（例如百度热搜可能返回合并列）
                 for c in d.columns:
                     sample = d[c].astype(str).head(20).str.extract(r"(\d{6})", expand=False).dropna()
-                    if len(sample) >= max(3, len(d) // 3):
+                    # 阈值提高为 2/3 且不低于 5，避免从金额/序号等误提 6 位数字
+                    if len(sample) >= max(5, len(d) * 2 // 3):
                         cc = c
                         logger.info("热榜源 %s 使用兜底列 %s 提取代码", fname, c)
                         break
@@ -214,13 +213,17 @@ def fetch_universe(
     top_n_hot: int,
     exclude_prefixes: List[str],
     exclude_name_keywords: List[str],
-) -> List[StockSnapshot]:
-    """合并“成交额前N”和“同花顺热榜前N”，去重并应用排除规则。"""
+    spot_source: str = "auto",
+) -> Tuple[List[StockSnapshot], pd.DataFrame]:
+    """合并“成交额前N”和“同花顺热榜前N”，去重并应用排除规则。
+
+    返回 (snapshots, spot_df)，spot_df 可以被下游复用避免重复拉。
+    """
     logger.info("拉取全市场实时行情 ...")
-    spot = _load_spot()
+    spot = _load_spot(spot_source)
     if spot.empty:
         logger.warning("行情数据为空")
-        return []
+        return [], spot
 
     # 排除
     mask = spot.apply(
@@ -319,7 +322,7 @@ def fetch_universe(
             )
         )
     logger.info("合并去重后样本数: %d", len(snapshots))
-    return snapshots
+    return snapshots, spot
 
 
 def fetch_recent_klines(code: str, days: int = 250) -> pd.DataFrame:
@@ -354,17 +357,27 @@ def _kline_em(code: str, start_date: str, end_date: str) -> pd.DataFrame:
     return df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
 
 
+def _sina_symbol(code: str) -> str:
+    """根据 A股/B股/北交所代码返回新浪格式 symbol。
+
+    - 60xxxx (沪A) / 68xxxx (科创板) / 9xxxxx (沪B 900xxx) -> sh
+    - 00xxxx (深A) / 30xxxx (创业板) / 200xxx (深B) -> sz
+    - 4xxxxx / 8xxxxx (北交所含 920xxx) -> bj
+    """
+    c = str(code).zfill(6)
+    if c.startswith(("60", "68", "9")):
+        return "sh" + c
+    if c.startswith(("4", "8")):
+        return "bj" + c
+    # 00xxxx / 30xxxx / 200xxx 都归 sz
+    return "sz" + c
+
+
 def _kline_sina(code: str, start_date: str, end_date: str) -> pd.DataFrame:
     """新浪日线作为东财失败时的回退。symbol 需要带 sh/sz/bj 前缀。"""
     import akshare as ak
 
-    c = str(code).zfill(6)
-    if c.startswith(("60", "68", "9")):
-        sym = "sh" + c
-    elif c.startswith(("4", "8")):
-        sym = "bj" + c
-    else:
-        sym = "sz" + c
+    sym = _sina_symbol(code)
     df = ak.stock_zh_a_daily(symbol=sym, start_date=start_date, end_date=end_date, adjust="qfq")
     if df is None or df.empty:
         return pd.DataFrame()
@@ -467,19 +480,27 @@ def fetch_klines_concurrent(
     return out
 
 
-def fetch_spot_prices(codes: List[str]) -> Dict[str, Tuple[float, float, str]]:
+def fetch_spot_prices(
+    codes: List[str],
+    spot_df: Optional[pd.DataFrame] = None,
+    spot_source: str = "auto",
+) -> Dict[str, Tuple[float, float, str]]:
     """查询若干股票当前价/涨跌幅/名称（用于上次推送票的回看对比）。
+
+    优先复用调用方传入的 spot_df，避免重复拉全市场行情。
 
     返回 {code: (price, pct_change, name)}；查不到的代码不在返回 dict 中。
     """
     if not codes:
         return {}
-    try:
-        spot = _load_spot()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("拉取实时行情失败: %s", e)
-        return {}
-    if spot.empty:
+    spot = spot_df
+    if spot is None or spot.empty:
+        try:
+            spot = _load_spot(spot_source)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("拉取实时行情失败: %s", e)
+            return {}
+    if spot is None or spot.empty:
         return {}
     wanted = set(str(c).strip() for c in codes)
     sub = spot[spot["code"].isin(wanted)]

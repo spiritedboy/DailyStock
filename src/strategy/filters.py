@@ -11,13 +11,20 @@ logger = logging.getLogger(__name__)
 
 
 def _limit_pct(code: str) -> float:
-    """主板 ±10%，创业板/科创板 ±20%，北交所 ±30%。返回涨停涨幅 %。"""
-    if code.startswith(("30",)):  # 创业板
+    """返回涨停涨幅 %。
+
+    - 创业板 30、科创板 68 ±20%
+    - 北交所 4 / 8 / 920 ±30%
+    - 上证 B 股 9 (900xxx) / 深证 B 股 200 ±10%
+    - 主板 60 / 00 ±10%
+    """
+    if code.startswith("30"):  # 创业板
         return 20.0
-    if code.startswith(("68",)):  # 科创板
+    if code.startswith("68"):  # 科创板
         return 20.0
-    if code.startswith(("8", "4", "92")):  # 北交所
+    if code.startswith(("4", "8", "920")):  # 北交所
         return 30.0
+    # 其他（沪A 60、深A 00、沪B 9、深B 200）默认 10%
     return 10.0
 
 
