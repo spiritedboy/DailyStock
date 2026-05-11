@@ -488,6 +488,11 @@ def render_html(
 
   <footer>
     数据来源：东方财富 / 同花顺；AI 判定：DeepSeek。仅供研究，不构成投资建议。
+    <div style="margin-top:8px;">
+      访问次数
+      <img src="https://visitor-badge.laobi.icu/badge?page_id=dailystock.{run_date}.{slot}&left_text=visits"
+           alt="visits" style="vertical-align:middle;height:18px;">
+    </div>
   </footer>
 </div>
 </body>
