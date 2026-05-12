@@ -243,6 +243,147 @@ def sig_liquidity(snapshot: StockSnapshot, turnover_floor: float, amplitude_cap:
     return True, f"流动性OK {snapshot.turnover/1e8:.2f}亿/振幅{snapshot.amplitude:.2f}%"
 
 
+def sig_macd_pullback_entry(
+    klines: pd.DataFrame,
+    snapshot: StockSnapshot,
+    ind: IndicatorBundle,
+    lookback: int = 60,
+    impulse_min_bars: int = 2,
+    pullback_min_bars: int = 2,
+    pullback_max_bars: int = 20,
+    shrink_ratio: float = 0.85,
+    volume_ratio_min: float = 1.2,
+) -> Tuple[bool, str]:
+    """组合策略：底部启动 → 缩量回调不破颈 → 当日阳线放量金叉。
+
+    分四段：
+      1) 启动段：lookback 内出现过 MACD 金叉(hist 由负转正)，之后至少 impulse_min_bars
+         根红柱递增（小红→大红），并记录启动段最高的 hist 与最高价(=颈线)。
+      2) 回调段：启动段之后出现 hist 见顶回落，hist/红柱缩水或转绿；持续 pullback_min_bars
+         ~ pullback_max_bars 根；其中 dif 未创启动段新高(顶背离)。
+      3) 颈线防守：回调段最低收盘价 >= 启动段起点收盘 × 0.97（不有效跌破）。
+      4) 当日触发：阳线(close>open) + 放量(volume >= 5日均量 × volume_ratio_min)
+         + 当日 MACD 金叉(hist 由 <=0 转 >0，或 dif 上穿 dea)。
+    """
+    if klines is None or klines.empty or len(klines) < 35:
+        return False, "K线不足"
+    needed = {"close", "open", "volume"}
+    if not needed.issubset(klines.columns):
+        return False, "缺列(close/open/volume)"
+
+    from .indicators import macd as _macd
+
+    closes = klines["close"].astype(float)
+    opens = klines["open"].astype(float)
+    vols = klines["volume"].astype(float)
+    dif, dea, hist = _macd(closes)
+
+    n = len(closes)
+    win = min(lookback, n - 1)
+    if win < 20:
+        return False, "lookback不足"
+    # 在 [n-win, n-1] 范围内找最近一次金叉（hist 前<=0 当前>0）
+    cross_idx = -1
+    for i in range(n - win + 1, n):
+        h_prev = hist.iloc[i - 1]
+        h_now = hist.iloc[i]
+        if pd.isna(h_prev) or pd.isna(h_now):
+            continue
+        if h_prev <= 0 < h_now:
+            cross_idx = i
+    if cross_idx < 0 or cross_idx >= n - (impulse_min_bars + pullback_min_bars):
+        return False, "lookback内无可用底部金叉"
+
+    # 1) 启动段：金叉后红柱递增的根数
+    impulse_end = cross_idx
+    for j in range(cross_idx + 1, n):
+        h_j = hist.iloc[j]
+        h_prev = hist.iloc[j - 1]
+        if pd.isna(h_j) or pd.isna(h_prev):
+            break
+        if h_j > 0 and h_j >= h_prev:
+            impulse_end = j
+        else:
+            break
+    impulse_bars = impulse_end - cross_idx
+    if impulse_bars < impulse_min_bars:
+        return False, f"启动段红柱仅{impulse_bars}<{impulse_min_bars}"
+
+    impulse_peak_hist = float(hist.iloc[cross_idx: impulse_end + 1].max())
+    impulse_peak_dif = float(dif.iloc[cross_idx: impulse_end + 1].max())
+    impulse_peak_close = float(closes.iloc[cross_idx: impulse_end + 1].max())
+    impulse_start_close = float(closes.iloc[cross_idx])  # 颈线/启动平台
+
+    # 2) 回调段：impulse_end+1 ~ n-2（昨天为止），hist 缩水或转绿
+    pullback_start = impulse_end + 1
+    pullback_end = n - 2  # 不含今天，今天用于触发判定
+    pullback_bars = pullback_end - pullback_start + 1
+    if pullback_bars < pullback_min_bars:
+        return False, f"回调段仅{pullback_bars}根<{pullback_min_bars}"
+    if pullback_bars > pullback_max_bars:
+        return False, f"回调段已 {pullback_bars}>上限{pullback_max_bars}, 形态过期"
+
+    pullback_hist = hist.iloc[pullback_start: pullback_end + 1]
+    pullback_dif = dif.iloc[pullback_start: pullback_end + 1]
+    pullback_closes = closes.iloc[pullback_start: pullback_end + 1]
+    pullback_vols = vols.iloc[pullback_start: pullback_end + 1]
+    impulse_vols = vols.iloc[cross_idx: impulse_end + 1]
+
+    if pullback_hist.isna().any() or pullback_dif.isna().any():
+        return False, "MACD缺失"
+
+    # 红柱顶 → 衰减：回调段 hist 最小值 < 启动段 hist 峰值
+    if float(pullback_hist.min()) >= impulse_peak_hist:
+        return False, "无红柱衰减"
+
+    # 3) 顶背离：回调段 dif 最高未超过启动段峰值；且回调段最高 close 接近或超启动峰但 dif 没跟上
+    pullback_peak_dif = float(pullback_dif.max())
+    pullback_peak_close = float(pullback_closes.max())
+    divergence = (pullback_peak_close >= impulse_peak_close * 0.98) and (pullback_peak_dif < impulse_peak_dif)
+    # 没有严格顶背离也允许，但要求至少 dif 跟随回落
+    if not divergence and pullback_peak_dif >= impulse_peak_dif:
+        return False, "未见顶背离/dif创新高"
+
+    # 4) 不破颈线：回调段最低 close >= 启动起点 close × 0.97
+    if float(pullback_closes.min()) < impulse_start_close * 0.97:
+        return False, "跌破颈线启动平台"
+
+    # 5) 回调缩量：回调期均量 < 启动期均量 × shrink_ratio
+    if float(impulse_vols.mean()) > 0:
+        vol_shrink = float(pullback_vols.mean()) / float(impulse_vols.mean())
+        if vol_shrink > shrink_ratio:
+            return False, f"回调未缩量 vol={vol_shrink:.2f}>{shrink_ratio}"
+    else:
+        vol_shrink = float("nan")
+
+    # 6) 当日触发：阳线 + 放量 + 金叉
+    today_close = float(closes.iloc[-1])
+    today_open = float(opens.iloc[-1])
+    is_red = today_close > today_open
+    if not is_red:
+        return False, "今日非阳线"
+
+    vol_ratio = ind.volume_ratio if not pd.isna(ind.volume_ratio) else float("nan")
+    if pd.isna(vol_ratio) or vol_ratio < volume_ratio_min:
+        return False, f"今日未放量 量比={vol_ratio:.2f}<{volume_ratio_min}"
+
+    h_today = float(hist.iloc[-1])
+    h_yest = float(hist.iloc[-2])
+    dif_today = float(dif.iloc[-1])
+    dea_today = float(dea.iloc[-1])
+    dif_yest = float(dif.iloc[-2])
+    dea_yest = float(dea.iloc[-2])
+    cross_today = (h_yest <= 0 < h_today) or (dif_yest <= dea_yest and dif_today > dea_today)
+    if not cross_today:
+        return False, "今日未金叉"
+
+    vol_desc = "" if pd.isna(vol_shrink) else f" 缩量{vol_shrink:.2f}x"
+    return True, (
+        f"底部启动{impulse_bars}红柱→回调{pullback_bars}根{vol_desc}"
+        f"→今日阳线放量{vol_ratio:.2f}x+MACD金叉"
+    )
+
+
 def evaluate(
     snapshot: StockSnapshot, klines: pd.DataFrame, cfg: StrategyConfig
 ) -> Tuple[StrategyResult, IndicatorBundle]:
@@ -284,6 +425,15 @@ def evaluate(
         ("VOLUME", cfg.volume_enabled, lambda: sig_volume(snapshot, ind, cfg.volume_ratio_min)),
         ("PCT_RANGE", cfg.pct_enabled, lambda: sig_pct_range(snapshot, cfg.pct_min, cfg.pct_max)),
         ("LIQUIDITY", cfg.liquidity_enabled, lambda: sig_liquidity(snapshot, cfg.turnover_floor, cfg.amplitude_cap)),
+        ("MACD_PULLBACK", cfg.macd_pullback_enabled, lambda: sig_macd_pullback_entry(
+            klines, snapshot, ind,
+            lookback=cfg.macd_pullback_lookback,
+            impulse_min_bars=cfg.macd_pullback_impulse_min,
+            pullback_min_bars=cfg.macd_pullback_min,
+            pullback_max_bars=cfg.macd_pullback_max,
+            shrink_ratio=cfg.macd_pullback_shrink_ratio,
+            volume_ratio_min=cfg.volume_ratio_min,
+        )),
     ]
     for name, enabled, fn in signal_runners:
         if not enabled:

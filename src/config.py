@@ -62,6 +62,12 @@ class StrategyConfig:
     volume_enabled: bool = True
     pct_enabled: bool = True
     liquidity_enabled: bool = True
+    macd_pullback_enabled: bool = True
+    macd_pullback_lookback: int = 60
+    macd_pullback_impulse_min: int = 2
+    macd_pullback_min: int = 2
+    macd_pullback_max: int = 20
+    macd_pullback_shrink_ratio: float = 0.85
     # 阈值
     volume_ratio_min: float = 1.2
     pct_min: float = -3.0
@@ -193,6 +199,12 @@ def load_settings() -> Settings:
             volume_enabled=_get_bool("STRAT_VOLUME_ENABLED", True),
             pct_enabled=_get_bool("STRAT_PCT_ENABLED", True),
             liquidity_enabled=_get_bool("STRAT_LIQUIDITY_ENABLED", True),
+            macd_pullback_enabled=_get_bool("STRAT_MACD_PULLBACK_ENABLED", True),
+            macd_pullback_lookback=_get_int("MACD_PULLBACK_LOOKBACK", 60),
+            macd_pullback_impulse_min=_get_int("MACD_PULLBACK_IMPULSE_MIN", 2),
+            macd_pullback_min=_get_int("MACD_PULLBACK_MIN", 2),
+            macd_pullback_max=_get_int("MACD_PULLBACK_MAX", 20),
+            macd_pullback_shrink_ratio=_get_float("MACD_PULLBACK_SHRINK_RATIO", 0.85),
             volume_ratio_min=_get_float("VOLUME_RATIO_MIN", 1.2),
             pct_min=_get_float("PCT_MIN", -3.0),
             pct_max=_get_float("PCT_MAX", 7.0),

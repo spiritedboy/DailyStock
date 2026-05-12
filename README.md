@@ -241,6 +241,7 @@ crontab -e
 | VOLUME | 当日量 ≥ 5 日均量 × `VOLUME_RATIO_MIN` | `STRAT_VOLUME_ENABLED` |
 | PCT_RANGE | 涨跌幅 ∈ [`PCT_MIN`, `PCT_MAX`] | `STRAT_PCT_ENABLED` |
 | LIQUIDITY | 成交额 ≥ `TURNOVER_FLOOR` 且振幅 ≤ `AMPLITUDE_CAP` | `STRAT_LIQUIDITY_ENABLED` |
+| MACD_PULLBACK | MACD 底部金叉启动（红柱小→大）→ 缩量回调不破颈线且 DIF 顶背离 → 当日阳线放量再金叉 | `STRAT_MACD_PULLBACK_ENABLED` |
 
 所有阈值可在 `.env` 内调整；候选池逻辑为：**硬过滤 → 一票否决 → 信号≥2**，候选池逐只调用 DeepSeek。
 
