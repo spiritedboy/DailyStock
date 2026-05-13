@@ -127,6 +127,7 @@ h3 { font-size: 15px; margin: 16px 0 8px; }
 .tag-tov { background: var(--tag-tov-bg); color: var(--tag-tov-fg); }
 .tag-hot { background: var(--tag-hot-bg); color: var(--tag-hot-fg); }
 .tag-focus { background: var(--tag-focus-bg); color: var(--tag-focus-fg); }
+.tag-must { background: #dc2626; color: #fff; font-weight: 600; }
 .tag-allow { background: var(--tag-allow-bg); color: var(--tag-allow-fg); }
 .tag-deny { background: var(--tag-deny-bg); color: var(--tag-deny-fg); }
 
@@ -209,6 +210,7 @@ def _render_pushed_table(pushed: List[StockEvaluation]) -> str:
         elif ai:
             allow_html = '<span class="tag tag-deny">AI 异常</span>'
         focus_html = '<span class="tag tag-focus">重点</span>' if e.is_focus else ""
+        must_html = '<span class="tag tag-must">一票通过</span>' if st.must_push else ""
 
         details_lines = []
         if st.signals:
@@ -256,7 +258,7 @@ def _render_pushed_table(pushed: List[StockEvaluation]) -> str:
     <div class="card-title">{_esc(s.code)} <small>{_esc(s.name)}</small></div>
     <div class="card-score">{score}<small style="font-size:12px;color:var(--muted);font-weight:400;"> /100</small></div>
   </div>
-  <div>{_sources_html(s.sources)}{focus_html}{allow_html}</div>
+  <div>{_sources_html(s.sources)}{must_html}{focus_html}{allow_html}</div>
   <div class="kv">
     <div><div class="k">最新价</div><div class="v">{_fmt(s.price)}</div></div>
     <div><div class="k">涨跌幅</div><div class="v">{_pct_html(s.pct_change)}</div></div>

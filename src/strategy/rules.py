@@ -447,6 +447,9 @@ def evaluate(
         if hit:
             result.hits += 1
             result.signals.append(name)
+            if name == "MACD_PULLBACK":
+                result.must_push = True
+                result.must_push_reasons.append(msg)
         else:
             result.misses.append(line)
     return result, ind

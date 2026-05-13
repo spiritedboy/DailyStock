@@ -60,6 +60,8 @@ class StrategyResult:
     signals: List[str] = field(default_factory=list)
     misses: List[str] = field(default_factory=list)
     details: List[str] = field(default_factory=list)
+    must_push: bool = False  # 一票通过：命中即必推（仍走 AI 评分）
+    must_push_reasons: List[str] = field(default_factory=list)
 
 
 @dataclass

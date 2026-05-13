@@ -48,20 +48,21 @@ def _select_pushed(
     focus: List[StockEvaluation],
     push_top_n: int,
 ) -> List[StockEvaluation]:
-    """推送列表 = AI 评分前 N（仅 ok 的）∪ 重点票，去重，按 AI 分降序。"""
+    """推送列表 = 一票通过 ∪ AI 评分前 N（仅 ok 的）∪ 重点票，去重，按 AI 分降序。"""
+    must_push = [e for e in evals if e.strategy.must_push]
     by_score = [e for e in evals if e.ai and e.ai.ok]
     by_score.sort(key=lambda e: (e.ai.score, e.strategy.hits), reverse=True)
     top_n = by_score[:push_top_n] if push_top_n > 0 else []
 
     seen = set()
     out: List[StockEvaluation] = []
-    for ev in list(focus) + top_n:
+    for ev in list(must_push) + list(focus) + top_n:
         c = ev.snapshot.code
         if c in seen:
             continue
         seen.add(c)
         out.append(ev)
-    out.sort(key=lambda e: (e.ai.score if e.ai else 0, e.strategy.hits), reverse=True)
+    out.sort(key=lambda e: (e.strategy.must_push, e.ai.score if e.ai else 0, e.strategy.hits), reverse=True)
     return out
 
 
@@ -208,13 +209,34 @@ def _run_inner(
     )
     vetoed = [e for e in evals if e.strategy.vetoed]
     min_signals = settings.strategy.min_signals
-    candidates = [e for e in evals if e.is_candidate(min_signals)]
-    logger.info("否决=%d 候选=%d (阈值 hits>=%d)", len(vetoed), len(candidates), min_signals)
+    must_push_evals = [e for e in evals if e.strategy.must_push and not e.strategy.vetoed and e.strategy.risk_passed]
+    if must_push_evals:
+        logger.info(
+            "一票通过命中 %d 只: %s",
+            len(must_push_evals),
+            [e.snapshot.code for e in must_push_evals],
+        )
+    must_codes = {e.snapshot.code for e in must_push_evals}
+    candidates = [
+        e for e in evals
+        if e.is_candidate(min_signals) or e.snapshot.code in must_codes
+    ]
+    logger.info(
+        "否决=%d 候选=%d (阈值 hits>=%d, 含一票通过 %d 只)",
+        len(vetoed), len(candidates), min_signals, len(must_push_evals),
+    )
 
-    candidates.sort(key=lambda e: e.strategy.hits, reverse=True)
+    # 排序：一票通过优先，其次按 hits 倒序；AI 名额裁剪时优先保证一票通过都被打分
+    candidates.sort(key=lambda e: (e.strategy.must_push, e.strategy.hits), reverse=True)
     ai_call_list = candidates
     if settings.ai_max_candidates > 0:
         ai_call_list = candidates[: settings.ai_max_candidates]
+        # 兜底：若名额裁剪把一票通过的票挤出去，强制补回
+        in_list = {id(e) for e in ai_call_list}
+        for e in must_push_evals:
+            if id(e) not in in_list:
+                ai_call_list.append(e)
+                in_list.add(id(e))
 
     # 5) DeepSeek（仅缓存，不限额）
     ai_called = 0
@@ -267,18 +289,28 @@ def _run_inner(
     if market_bad:
         raw_pushed = [
             e for e in raw_pushed
-            if (e.ai and e.ai.score >= settings.market_filter_min_score)
+            if e.strategy.must_push or (e.ai and e.ai.score >= settings.market_filter_min_score)
         ]
-        logger.info("大盘弱势过滤后剩余 %d 只", len(raw_pushed))
+        logger.info("大盘弱势过滤后剩余 %d 只 (一票通过豁免)", len(raw_pushed))
 
     if settings.industry_diversify_enabled and industry_map:
+        # 一票通过不参与行业去集中
+        protected = [e for e in raw_pushed if e.strategy.must_push]
+        rest = [e for e in raw_pushed if not e.strategy.must_push]
         kept, removed_ind = diversify_by_industry(
-            raw_pushed, industry_map,
+            rest, industry_map,
             max_per_industry=settings.industry_max_per_industry,
         )
         if removed_ind:
-            logger.info("行业去集中剔除 %d 只", len(removed_ind))
-        raw_pushed = kept
+            logger.info("行业去集中剔除 %d 只 (一票通过豁免)", len(removed_ind))
+        # 保持原始顺序：用 set 跳过已收录的，先 protected 后 kept
+        seen = {e.snapshot.code for e in protected}
+        merged = list(protected)
+        for e in kept:
+            if e.snapshot.code not in seen:
+                merged.append(e)
+                seen.add(e.snapshot.code)
+        raw_pushed = merged
 
     pushed = raw_pushed
     for ev in pushed:
