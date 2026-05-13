@@ -129,6 +129,7 @@ class Settings:
     max_price: float = 0.0  # 价格上限（0=不限）；一手=100 股，超过此价的票在候选前剔除
     # 跟踪 / 评估
     tracking_enabled: bool = True
+    tracking_timeout: int = 120  # 跟踪步骤整体硬超时秒数，超时以后本轮跳过
     tracking_lookback_days: int = 30
 
     # 报告 / HTML
@@ -234,6 +235,7 @@ def load_settings() -> Settings:
         ),
         max_price=_get_float("MAX_PRICE", 0.0),
         tracking_enabled=_get_bool("TRACKING_ENABLED", True),
+        tracking_timeout=_get_int("TRACKING_TIMEOUT", 120),
         tracking_lookback_days=_get_int("TRACKING_LOOKBACK_DAYS", 30),
         report_host=_get("REPORT_HOST", "").rstrip("/"),
         reports_dir=Path(_get("REPORTS_DIR", "./reports")),

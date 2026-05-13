@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 import logging
 import sys
 import traceback
@@ -327,10 +328,39 @@ def _run_inner(
     # 8) 跟踪：更新历史推送的 T+N 收益
     if settings.tracking_enabled and not dryrun:
         try:
-            def _fetch(code: str, days: int = 80):
-                return fetch_klines_concurrent([code], days=days, cache=cache, max_workers=1).get(code)
-            n_upd = update_pick_returns(repo, _fetch)
-            logger.info("跟踪表更新条数: %d", n_upd)
+            pending_rows = repo.fetch_pending_returns(max_periods=20)
+            pending_codes = sorted({r["code"] for r in pending_rows})
+            if not pending_codes:
+                logger.info("跟踪表无待更新条目")
+            else:
+                logger.info("跟踪表待更新 %d 只票，开始并发拉日线", len(pending_codes))
+                # 并发预取所有需要的日线（带硬超时），失败/超时的票本轮跳过
+                klines_by_code: dict = {}
+
+                def _do_prefetch():
+                    return fetch_klines_concurrent(
+                        pending_codes, days=80, cache=cache,
+                        max_workers=settings.klines_workers,
+                    )
+
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    fut = ex.submit(_do_prefetch)
+                    try:
+                        klines_by_code = fut.result(timeout=settings.tracking_timeout)
+                    except FuturesTimeoutError:
+                        logger.warning(
+                            "跟踪日线拉取超过 %ss 仍未完成，本轮跳过 (部分已写入缓存，下轮会续上)",
+                            settings.tracking_timeout,
+                        )
+                        klines_by_code = {}
+                got = sum(1 for v in klines_by_code.values() if v is not None and not getattr(v, "empty", True))
+                logger.info("跟踪日线拉取完成: 命中=%d / 待更新=%d", got, len(pending_codes))
+
+                def _fetch(code: str, days: int = 80):
+                    return klines_by_code.get(code)
+
+                n_upd = update_pick_returns(repo, _fetch, codes_subset=list(klines_by_code.keys()))
+                logger.info("跟踪表更新条数: %d", n_upd)
         except Exception as e:  # noqa: BLE001
             logger.warning("更新跟踪表失败: %s", e)
 

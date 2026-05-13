@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 PERIODS = [1, 3, 5, 10, 20]  # 跟踪 T+N 的相对收益
 
 
-def update_pick_returns(repo, fetch_klines) -> int:
+def update_pick_returns(repo, fetch_klines, codes_subset=None) -> int:
     """对所有已推送票，按 T+N 计算累计涨跌幅写入 pick_returns 表。
 
-    fetch_klines: callable(code, days=80) -> DataFrame(date, close, ...)
+    fetch_klines: callable(code, days=80) -> DataFrame(date, close, ...) 或 None
+    codes_subset: 可选，仅处理给定 code 列表（用于上游已经预取并限制范围的情况）
     返回更新条数。
     """
     pending = repo.fetch_pending_returns(max_periods=max(PERIODS))
@@ -24,6 +25,10 @@ def update_pick_returns(repo, fetch_klines) -> int:
     by_code: Dict[str, List[dict]] = {}
     for row in pending:
         by_code.setdefault(row["code"], []).append(row)
+
+    if codes_subset is not None:
+        codes_subset = set(codes_subset)
+        by_code = {c: rs for c, rs in by_code.items() if c in codes_subset}
 
     updated = 0
     for code, rows in by_code.items():
